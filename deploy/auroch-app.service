@@ -1,0 +1,16 @@
+[Unit]
+Description=Auroch Engine v2 dashboard (Vite preview on 127.0.0.1:6001)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/boss/Documents/Collage/BTP/auroch-engine-v2
+ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 6001 --strictPort
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

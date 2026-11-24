@@ -1,0 +1,50 @@
+{
+  "experiment": "scale_sensitivity_on_exact_paper_snapshot",
+  "input_snapshot": "data/lngraph_2021_11_27__21_00.json",
+  "snapshot_source": "discharged-pc-data archive, lngraph_2021_11_27__21_00.json.zst",
+  "snapshot_counts": {
+    "nodes": 18331,
+    "channels": 80918
+  },
+  "paper_reported_counts": {
+    "nodes": 18331,
+    "channels": 80918
+  },
+  "counts_match_paper": true,
+  "transaction_counts": [
+    5000,
+    7000,
+    9000
+  ],
+  "capacity_scales": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    10
+  ],
+  "runs_per_configuration": 20,
+  "simulations_including_protocols": 2400,
+  "seed": 20261116,
+  "od_pair_pool": 128,
+  "initial_liquidity": "50:50 directional balance assumption",
+  "payment_amounts": "synthetic log-uniform 1,000-1,000,000 sat; Bitcoin trace unavailable",
+  "channel_policies": "ignored in proxy benchmark",
+  "parallel_channels": "aggregated by directed endpoint pair",
+  "fee_model": "1 sat base per hop + seeded integer rate [0,10] * amount (static proxies)",
+  "dynamic_tau_formula": "tau_min + (tau_max-tau_min)*(1-available/capacity)**alpha, alpha=2",
+  "dynamic_fee_executed": true,
+  "dynamic_fee_note": "auroch_dynamic_proxy re-ranks cached paths and charges per-hop fees from the current directional liquidity ratio; it is still a proxy, not the paper auction",
+  "paper_scales_omitted": [
+    30,
+    50,
+    70
+  ],
+  "paper_scales_omitted_reason": "saturated at high multiplier; low dense range exposes curvature and method differences",
+  "paper_faithful_reproduction": false,
+  "caveat": "Proxy methods, synthetic amounts, 50:50 liquidity; not a faithful paper reproduction",
+  "elapsed_seconds": 300.2714935419999
+}

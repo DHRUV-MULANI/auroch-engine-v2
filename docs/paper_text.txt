@@ -1,0 +1,2006 @@
+Auroch: Auction-Based Multipath Routing for Payment Channel
+Networks
+Mohammed Ababneh
+
+Kartick Kolachala
+
+Roopa Vishwanathan
+
+New Mexico State University
+Las Cruces, NM, USA
+mababneh@nmsu.edu
+
+New Mexico State University
+Las Cruces, NM, USA
+kart1712@nmsu.edu
+
+New Mexico State University
+Las Cruces, NM, USA
+roopav@nmsu.edu
+
+ABSTRACT
+
+for a fixed amount of time for use only between those two parties.
+In contrast to the on-chain transaction confirmation mechanism
+used in blockchains, once a payment channel has been established
+between two parties, all transactions between them utilizing the
+locked-up coins can be performed offline without the need to write
+transactions on the blockchain. The available balance, i.e., coins of
+a channel limits the number of transactions that can be performed
+over that channel. Two nodes that do not have a direct payment
+channel can still transact with each other using multiple transactions over payment channels between intermediate nodes, forming
+a payment channel network. To facilitate transactions between a
+sender and a receiver, intermediate nodes charge routing fees. As
+a result, the sender node has to pay both the actual amount that
+they intend to send, along with the sum of routing fees along the
+path that comprises several intermediate nodes. Figure 1 represents
+a PCN with six nodes Alice, Sam, Alexa, Peter, Megan, and Chloe.
+The bidirectional edges between the nodes represent the payment
+channels which allow funds to be sent in both directions, the edge
+weights next to each node depict that node’s local balance, and the
+sum of the nodes’ local balances represents the channel capacity.
+
+The Bitcoin blockchain scalability problem has inspired several offchain solutions for enabling cryptocurrency transactions, of which
+Layer-2 systems such as payment channel networks (PCNs) have
+emerged as a frontrunner. PCNs allow for path-based transactions
+between users without the need to access the blockchain. These
+path-based transactions are possible only if a suitable path exists
+from the sender of a payment to the receiver. In this paper, we propose Auroch, a distributed auction-based pathfinding and routing
+protocol that takes into account the routing fees charged by nodes
+along a path. Unlike other routing protocols proposed for PCNs,
+Auroch takes routing fees into consideration. Auroch maximizes the
+profit that can be achieved by an intermediate node at the same
+time minimizing the overall payment cost for the sender.
+
+CCS CONCEPTS
+• Security and privacy → Privacy-preserving protocols; Distributed systems security; Security protocols.
+
+KEYWORDS
+Payment channel networks, Auction, Blockchains.
+ACM Reference Format:
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan. 2024.
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks.
+In ACM Asia Conference on Computer and Communications Security (ASIA
+CCS ’24), July 1–5, 2024, Singapore, Singapore. ACM, New York, NY, USA,
+17 pages. https://doi.org/10.1145/3634737.3657021
+
+1
+
+INTRODUCTION
+
+Blockchains enabling cryptocurrencies such as Bitcoin have inherent scalability problems, e.g., Bitcoin supports less than 7 transactions per second [19] and Ethereum supports less than 15 transactions per second [27], as compared to traditional financial systems,
+e.g., Visa processes over 24,000 transactions per second [32]. Payment channel networks (PCNs) provide a solution to the scalability
+challenges faced by blockchains, by enabling users to take part in
+transactions without publishing each transaction to the blockchain.
+Examples of PCNs include Lightning Network [19], Raiden [21], and
+Ripple [22]. A payment channel is essentially a single multisignature blockchain transaction between two parties that locks up coins
+
+This work is licensed under a Creative Commons Attribution‐NonCommercial‐NoDerivs International 4.0
+License.
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+© 2024 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-0482-6/24/07.
+https://doi.org/10.1145/3634737.3657021
+
+Figure 1: Payment channel network
+If Alice wishes to send a payment to Chloe, she will need to
+route the payment through intermediaries, since there is no direct
+Alice−Chloe link. Alice can forward the payment along the Alice →
+Sam → Megan → Chloe path or the Alice → Alexa → Peter →
+Chloe path, or any of the other paths. Since Alexa, Sam, Peter, and
+Megan are forwarding Alice’s payment, they will charge a certain
+amount for their service, typically called routing fees. Since nodes
+in a PCN are not assumed to know the entire network topology
+beyond their immediate neighborhood, one of the big challenges in
+1
+
+1861
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+give a brief overview of Auroch and in Section 5, we present its
+construction. In Section 6, we present our experimental results, in
+Section 7 we analyze the security of Auroch in the UC framework,
+and in Section 8, we conclude the paper.
+
+PCNs is finding a path from a sender to a receiver in a decentralized,
+privacy-preserving way. In a PCN, pathfinding depends on several
+factors. One factor is the capacity or available liquidity of any
+chosen path from a sender to a receiver should at least be equal to
+the intended payment. In turn, a path’s capacity is upper bounded
+by the minimum capacity of the payment channels between the
+path’s intermediate nodes. In Figure 1, consider the path Alice →
+Alexa → Peter → Chloe. If Alice intends to send a payment via this
+path, the maximum amount she can send is three coins. A second
+important factor, that is of interest in this work, is the routing
+fees charged by intermediate nodes for routing payments. This is
+especially important since prior works [13, 17, 25, 26, 29] do not
+consider routing fees. Though there are prior works in the literature
+that consider routing fees [4, 7, 37, 38], they either use centralized
+routing techniques for pathfinding or do not have mechanisms
+in place that maximize the profit of intermediate nodes (nodes
+along the path from the sender to receiver, excluding the sender
+and receiver). Auroch differs from these since in Auroch, we do not
+use a centralized routing mechanism for pathfinding and we also
+maximize the overall profit of the intermediate nodes. We envision
+a scenario in which a path is constructed in a backward direction
+from a receiver to a sender, and each node is offered the option of
+joining a transaction path by a neighboring node that has already
+joined the path. In Figure 1, from the perspective of an intermediate
+node Megan, it is beneficial to select the best node among her
+neighbors Sam or Alexa in terms of higher routing fees and channel
+capacity. Similarly, an intermediate node Alexa might be offered
+to join two paths Megan → Chloe or Peter → Chloe, then from
+Alexa’s perspective, it is desirable to join the path that offers the
+largest capacity and lowest cost. In summary, including routing
+fees into distributed pathfinding protocols provides an incentive for
+intermediate nodes to participate in transactions. This has the effect
+of increasing the number of paths from sender to receiver. On the
+other hand, the sender’s goal is to utilize the set of available paths,
+with their different capacities and costs, to minimize the overall
+cost of the payment. To provide a solution to these conflicting goals,
+this paper makes the following contributions:
+
+2
+
+RELATED WORK
+
+Routing protocols which do not consider routing fees: Flare
+[20] adopts beacon-based routing, in which each node stores local
+information about the network and also stores information about
+beacon nodes, which are highly connected (nodes with a large number of incoming and outgoing links). A sender initially tries to find
+a path to the receiver using her locally stored information, if she
+is unable to do so, she contacts the nearest beacon node to facilitate pathfinding. Flare uses source routing in which each node
+is expected to store data about the network topology and it also
+does not take into account the routing fees charged by nodes. SilentWhispers [13] leverages the concept of landmark routing [31], in
+which a well-connected node in the network called landmark aids
+the other nodes in the pathfinding process. The sender first finds a
+path from itself to the landmark and the landmark then finds a path
+from itself to the receiver. Both these paths are stitched together
+to get the end-to-end path from the sender to the receiver. This
+protocol requires every path from the sender to the receiver to pass
+through a landmark, even though a shorter path is available that
+does not involve a landmark and does not take the routing fees
+charged by nodes into consideration during path selection. SpeedyMurmurs [26] is a routing protocol that uses prefix embedding
+for pathfinding. The network is organized as a tree, every node is
+assigned a prefix and the children of a node derive their prefixes
+from the parent’s prefix. This protocol calculates the path between
+two nodes based on the length of the common prefix between them.
+However, like [13], it does not take into account the routing fees
+charged by the intermediate nodes. Blanc [17] is a pathfinding protocol that uses a subset of users to facilitate transactions, termed
+“Routing Helpers”. Pathfinding from sender to receiver uses the technique of broadcast flooding, due to which the pathfinding phase
+incurs a very high communication overhead. Apart from this, it
+also uses the blockchain as an auditing mechanism. This results in a
+significantly high number of blockchain writes, even for successful
+transactions; in the event of transaction retries, the overhead is
+a lot more. This protocol too like the prior ones described so far,
+does not take into account routing fees charged by an intermediate node during routing. Spider [29] is a pathfinding protocol that
+uses source routing, in which the sender divides the payment into
+several smaller payments, each of which will be sent through a
+different path. This protocol mainly focuses on avoiding depletion
+of nodes’ link balances avoiding skewness (a situation where the
+node’s link weights become depleted) in the network and stores
+transactions in queues (each node maintains its queue). This causes
+the transactions to wait for an indefinite amount of time before
+they are processed. It also does not take into account the privacy
+of nodes involved in the transaction.
+Routing protocols that incorporate routing fees: The distributed
+protocols Cheapay[38] and Robustpay+[37] both use source routing
+and a flat fee structure, but they differ in the aspect that Cheapay
+sends a single payment on a single path, whereas Robustpay+ uses
+
+(1) We develop a distributed pathfinding and routing protocol,
+Auroch, that provides incentives for intermediate nodes to
+collaborate in route formation.
+(2) To maximize the intermediate nodes’ profit, while minimizing the routing cost for the sender, we provide a linear programming-based formula to divide the payment into
+smaller amounts, each of which can be forwarded along
+different paths.
+(3) We rigorously analyze and prove the security of Auroch in
+the Universal Composability framework.
+(4) The performance of Auroch is evaluated on real-world PCN
+datasets, and shows that it outperforms other comparable
+routing protocols for PCNs, in terms of success ratio, volume
+of successful transactions, and routing fees.
+Auroch can potentially be leveraged to other autonomous decentralized networks with unpredictable connectivity and high turnover
+rates, such as IoT or edge networks.
+Outline: In Section 2, we discuss related work. In Section 3,
+we describe relevant concepts in auction theory. In Section 4 we
+2
+
+1862
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Table 1: Comparison of routing protocols that factor in routing fees
+Routing Protocols
+
+Concurrency
+
+Sender/Receiver
+Privacy
+
+DSR/CR
+
+SR
+
+Fees
+
+Payment Structure
+Path
+Payment
+
+MIP
+
+DCB
+
+Auto-tune [8]
+MPCN-RP [4]
+VEIN [7]
+Robustpay+ [37]
+Cheapay [38]
+Auroch
+
+No
+No
+No
+No
+No
+Yes
+
+Yes
+No
+No
+Yes
+Yes
+Yes
+
+DSR
+CR
+CR
+DSR
+DSR
+DSR
+
+Yes
+Yes
+Yes
+Yes
+Yes
+No
+
+Flat
+Flat
+Dynamic
+Flat
+Flat
+Dynamic
+
+Multiple
+Single
+Multiple
+Multiple
+Single
+Multiple
+
+No
+No
+No
+No
+No
+Yes
+
+No
+No
+No
+No
+No
+Yes
+
+redundant payments on multiple paths. Both MPCN-RP[4] and
+VEIN[7] use centralized techniques in conjunction with source
+routing; however, VEIN uses dynamic fees and multiple payments
+on multiple paths. MPCN-RP uses flat fees and single payment on a
+single path. Auto-tune [8], similar to Cheapay and Robustpay+ uses
+source routing and implements a flat fee structure. With support
+for concurrency, sender/receiver privacy, distributed routing without source routing, dynamic fees, single payments, intermediaries’
+profit maximization, and dynamic channel balance adjustments,
+Auroch maintains its distinction from other works published in
+the domain. In Table 1, we give a qualitative comparison between
+Auroch and other routing protocols that consider routing fees. We
+now briefly describe our comparison metrics. Concurrency indicates whether the routing protocol allows the node to route multiple
+transactions at the same time. Send/Rec privacy indicates that the
+sender/receiver identity should not be known by other nodes in
+the network. Distributed/Centralized Routing (DSR/CR) indicates
+whether the routing protocol employs a trusted node (e.g., landmark, coordinator, etc.) in the network to provide routing services.
+Source routing (SR) indicates whether the sender constructs the
+end-to-end path to the receiver. The intermediate nodes can either charge a fixed fee called a flat fee or a dynamic fee based on
+factors such as the transaction amount. The payment structure
+indicates how the payment is routed. A single payment is when
+the transaction amount is not split by the sender. Multiple payments refer to when the amount is split into multiple chunks by the
+sender. A redundant payment is the same amount being transacted
+across several paths where the payment that reaches the receiver
+first is recorded. A single path is the sender using only one path
+to route payments to the receiver. Multiple paths are the sender
+using more than one path. Maximization of intermediaries profit
+(MIP) indicates whether the routing protocol aims to maximize
+the monetary profit of the intermediate nodes. Dynamic channel
+balance (DCB) indicates whether the routing protocol considers
+the dynamic changes in the channel balance of nodes during path
+construction.
+Auction Theory: The way buyers and sellers exchange goods in
+a market is the subject of a sub-discipline of economics known as
+auction theory [18]. We now give the definitions of terms from
+the auction literature [28, 36] that we use in Auroch. Bidder is the
+entity that submits a request in the auction to buy or sell commodities. In Auroch, any node in the network can be a bidder. Seller is
+the entity that owns a commodity and wants to sell it. In Auroch,
+any node in the network can be a seller. Auctioneer is the entity
+that supervises and controls the bidding process. In Auroch, any
+
+Multiple
+Single
+Multiple
+Redundant
+Single
+Multiple
+
+node in the network can conduct its auction and thus can have
+unilateral control over it. Commodity refers to the object traded in
+the auction between the buyer and seller. In Auroch, the commodity
+is the path capacity between a pair of nodes. Valuation is a metric
+used by the nodes to compare and decide which path needs to be
+chosen in the event of having more than one path to route the
+payment. The higher the valuation price for a path, the more likely
+it is for that path to be chosen to route the payment. Blockchain:
+Auroch can be deployed on any blockchain that supports hashed
+time-locked contracts (HTLCs). Wireless networks deploy auctions
+to create an appropriate reward that will encourage relay nodes to
+forward data [35]. In wireless networks, energy, processing power,
+and bandwidth are the resources that are auctioned. On the other
+hand, in PCNs, coins on the payment channel are the resources that
+are auctioned. Owing to the very different features and intent of
+both networks, auctions from wireless networks cannot be trivially
+ported to PCNs.
+There are various auctioning techniques available, including first
+price, second price auctions [36], and proportional auctions [1]. We
+do not use first-price or second-price auctions since it is not clear
+whether one can deploy them in a multipath payment scenario;
+rather in Auroch, we use proportional auctions [1] which seem a
+natural fit since they are commonly used in contexts where the
+commodity being auctioned is divisible, such as path capacity in
+our case. In Auroch, bidders will compete for a path capacity that
+is being offered for sale. Each bidder makes a bid in a proportional
+auction, indicating the portion of the path capacity they are willing
+to buy and the price they are prepared to pay per unit of that path
+capacity. The winners in this auction are determined by a linear
+optimization formula that takes into account both of the above
+factors.
+
+3
+
+SYSTEM SETUP
+
+Path Capacity: Path capacity is the defined as a the minimum
+amount that can be transacted between a sender and a receiver
+along a given path comprising of several intermediate nodes. In the
+Figure 2a, the path capacity along the path Alice → Peter → Ivan
+→ Chloe is 15.
+Channel Capacity: Channel capacity is defined as the total amount
+(balance) two nodes have in their payment channels with each other.
+In Figure 2a, the channel capacity between Alice and Peter is (25+50
+= 75).
+Network model: A payment channel network (PCN) can be modeled as a directed graph 𝐺 = (𝑉 , 𝐸) in which the set of vertices 𝑉
+represent network nodes (i.e., users) and 𝐸 represents the set of
+3
+
+1863
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+immediate neighbor. Value privacy: The transacted value is not
+learned by an adversary who is not involved in the payment path
+between sender and receiver. Bidding values privacy: Bidding value
+is typically sensitive information in an auction, since it reflects
+the economic strength of the buyer. Therefore, all bidding values
+should be protected against rival bidders.
+
+directed edges (i.e., payment channels) between nodes. Assume
+nodes 𝑣𝑖 and 𝑣 𝑗 have established a payment channel 𝑒𝑖,𝑗 between
+them. Then, let 𝑏𝑖,𝑗 represent the balance from node 𝑖 to 𝑗 (i.e., how
+many coins can node 𝑖 forward in the direction of node 𝑗). Note that
+the balances 𝑏𝑖,𝑗 and 𝑏 𝑗,𝑖 are not necessarily equal. The channel
+capacity of a payment channel channel 𝑒𝑖,𝑗 is denoted as 𝑐𝑖,𝑗 , where
+𝑐𝑖,𝑗 = 𝑏𝑖,𝑗 + 𝑏 𝑗,𝑖 .
+Challenges: One of the main challenges in applying auction mechanisms to PCN routing is the quantification of one path’s efficiency
+in comparison to other possible paths. Path efficiency is a function
+of several factors such as the fee the path requires, the number of
+hops, and the path capacity it can provide. To overcome this challenge, Auroch proposes a new valuation price function to evaluate
+the paths. The second challenge is the design of the bidding price
+mechanism with the restriction of keeping the intended value of
+the transaction secret (from all intermediaries) until forwarding
+paths are selected. In Auroch, the bidding price mechanism is based
+on the maximum capacity of intermediaries’ channels and not on
+the transaction amount. Third, the local channel balances of nodes
+in the payment channel network should not be revealed to nodes
+other than immediate neighbors, since doing so is a privacy violation. To overcome this challenge, Auroch enables the nodes to
+proactively apportion funds to different transactions, thus enabling
+concurrency.
+Threat model and Assumptions: In Auroch, we assume that every
+node in the PCN has access to the partial view of the network topology and no node in the PCN knows the entire network topology.
+This assumption has been made since making the entire network
+topology public will reveal the identities of all the nodes violating
+their privacy. One of the major advantages of blockchain based
+financial transactions is the ability to execute them anonymously.
+Apart from this, every node maintaining the entire network topology locally incurs a tremendous storage overhead and it may not be
+possible for nodes that operate the PCN from resource constrained
+devices. The Lightning Network, one of the most popular PCNs
+has implemented trampoline routing protocol [30] which requires
+nodes only to maintain a partial view of the network topology.
+The sender, 𝑛𝑠 and receiver, 𝑛𝑑 in Auroch can be malicious. Both
+of them can choose to abandon a transaction or cause intentional
+delays in the payments to lock-up collateral in channels. The intermediate nodes in Auroch can be un-trusted and can act in arbitrary
+ways. These nodes can misreport the maximum capacity they have
+in their channels with their next-hop neighbors with the intention
+of causing transaction failures. In this paper, we assume that there
+is at least one viable path available for the 𝑛𝑠 to route her payment.
+We assume that all users have a long-term verification/signing keypair and all users have pseudonymous, temporary key-pairs. Users’
+temporary key-pairs do not change unless there is a dispute.
+Security/privacy properties: Balance security: Balance security in
+our system ensures that any honest user participating in a transaction does not lose coins even if all other users engaging in the transaction are corrupted. Sender privacy: In our system, sender/receiver
+privacy is realized when an adversary cannot identify the identity
+of the sender in a transaction between honest users. Link privacy:
+An adversary can determine the path capacity along a path comprising of several intermediate nodes but can never exactly the
+local balance an honest node’s payment channel with its honest
+
+4
+
+OVERVIEW OF Auroch
+
+The goal of this paper is to explore the idea of using an auction
+mechanism to find multiple paths between a sender/receiver pair
+in a PCN and splitting a transaction amount along the different
+paths. We aim to do this in a way such that intermediaries can
+choose the most profitable path(s) to be on (in terms of routing
+fees), which incentivizes them to participate in transactions while
+helping the sender choose the most inexpensive path to the receiver.
+We use principles from auction theory and linear optimization to
+help achieve our goal.
+
+4.1
+
+Auroch Stages
+
+Auroch consists of three main stages: (1) Setup and Route discovery,
+(2) Route auctioning, and (3) Route selection. Next, the steps of the
+different stages are explained in detail.
+Setup and Route Discovery: In a dynamic environment such as
+a PCN, there is a possibility of the payment channel closing or
+opening, the node becoming offline, and frequent changes in the
+payment channel balance. Route discovery using route request
+(RREQ) and route reply (RREP) messages form the foundation of
+the Aourch. Consequently, a node should start a fresh route discovery procedure whenever it wishes to send a payment while
+the destination’s route is unknown. To find a path to the intended
+destination, the node broadcasts a route request (RREQ) message.
+Without loss of generality, let 𝑛𝑠 denote a node that wants to make
+a payment amt to a destination node 𝑛𝑑 . To initiate pathfinding to
+the destination, node 𝑛𝑠 broadcasts a routing request RREQ to its
+neighboring nodes (i.e., nodes connected with a payment channel
+to node 𝑛𝑠 ). For our purposes in this work, the RREQ message contains a field as follows RREQ = [txid]. The txid is the unique ID of
+the request. Each node that receives an RREQ tuple locally stores
+the txid and forwards this tuple to all its immediate neighbors. This
+step is repeated until the RREQ tuple reaches the intended destination, 𝑛𝑑 . If a node in the PCN does not want to be involved in the
+transaction, it simply drops the RREQ tuple.
+Route Auctioning: Once a destination node 𝑛𝑑 is reached, it sends
+RREP messages to the nodes in the set 𝑃𝑎𝑟𝑒𝑛𝑡(𝑛𝑑 ) that 𝑛𝑑 maintains locally. This set contains the immediate neighbors of 𝑛𝑑 from
+whom 𝑛𝑑 has received the RREQ tuple. The reply message RREP
+consists of a number of fields as follows RREP = [txid, 𝑃(𝑛𝑑 , 𝑛𝑙 ),
+𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑙 ), 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑙 )]. The field 𝑃(𝑛𝑑 , 𝑛𝑙 ) denotes the node path
+from the destination 𝑛𝑑 down to the current node 𝑛𝑙 . The field
+value 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑙 ) indicates the path capacity that can be allocated
+along the path 𝑃(𝑛𝑑 , 𝑛𝑙 ) and 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑙 ) refers to the corresponding
+forwarding cost per token. Once 𝑛𝑙 receives the RREP message, it
+conducts an auction to allocate both path capacity and cost, which
+are running values that will be updated at each hop. The route auctioning process consists of the following phases (i.e., sub-phases);
+4
+
+1864
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+(1) Auction setup : Let 𝑛𝑎 be an intermediate node (auctioneer) along the path from 𝑛𝑠 to 𝑛𝑑 which maintains a set,
+𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ), which contains the nodes from whom 𝑛𝑎 has
+received an RREQ message. Node 𝑛𝑎 then auctions the path
+capacity along the path from node 𝑛𝑑 to node 𝑛𝑎 . To start the
+auction, node 𝑛𝑎 broadcasts the AUC tuple to all the nodes in
+the set 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ). This message contains the following fields
+AUC = [txid, 𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ), 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 )]. In particular, 𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) indicates the path capacity that node 𝑛𝑎
+can provide over the path 𝑃(𝑛𝑑 , 𝑛𝑎 ) (which is upper bounded
+by the local channel balance of 𝑛𝑎 with its immediate neighbor along the path from 𝑛𝑑 to 𝑛𝑎 ). The third field in the AUC
+message is the reservation price 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 ) indicates
+the minimum price that the auctioneer 𝑛𝑎 demands to forward a payment along the path. Assume that node 𝑛𝑎 has
+won the preceding auction for the path 𝑃(𝑛𝑑 , 𝑛𝑎−1 ) and thus
+has attained forwarding privilege for the path 𝑃(𝑛𝑑 , 𝑛𝑎 ). Let
+𝑊 𝑖𝑛𝑃𝑟𝑖𝑐𝑒(𝑛𝑎 , 𝑃(𝑛𝑑 , 𝑛𝑎 )) denote the price that 𝑛𝑎 committed
+to pay to 𝑛𝑎−1 . Then, the reservation price 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 )
+that node 𝑛𝑎 asks for can be given as follows
+𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 ) = 𝑊 𝑖𝑛𝑃𝑟𝑖𝑐𝑒(𝑛𝑎 , 𝑃(𝑛𝑑 , 𝑛𝑎 )) + 𝜏fee
+
+𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝐴𝑁 (𝑛𝑏 , 𝑚))
+𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚)) = P
+𝑘 𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝐴𝑁 (𝑛𝑏 , 𝑘))
+
+
+𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝐴𝑁 (𝑛𝑏 , 𝑚))
+× 1− P
+𝑘 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝐴𝑁 (𝑛𝑏 , 𝑘))
+(3)
+𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚)) value falls in the interval [0, 1].
+This equation helps the bidding node to differentiate between the reservation prices and offered capacities of the
+𝑀 auctioneers’ offers.
+In the first term of Equation 3, the capacity of an auctioneer is compared relative to the sum of all offered capacities
+(i.e., normalized to a maximum value of 1). The more capacity an auctioneer offers relative to other auctioneers,
+the more is the value associated with this capacity and
+consequently, it is better to use the path offered by that
+auctioneer node. In the second term of Equation 3, the
+reservation prices are compared. Similar to the first term,
+an auctioneer’s reservation price is compared to the sum
+of all prices offered by all other auctioneers to normalize
+it for comparison purposes.
+Thus, the normalized reservation price indicates how costly
+a certain auctioneer node is in comparison to other auctioneers. In contrast to the capacity parameter, the larger
+the reservation price requested by a auctioneer in comparison to other auctioneers, the worse it is to use the path
+offered by this auctioneer since it incurs a higher fee value
+to be paid by the bidder. Thus, to compare the capacity
+and the reservation price together, the normalized reservation price is subtracted from 1. Finally, we note that
+since both the capacity and reservation prices are normalized to 1, their product (the proposed valuation price) is
+also normalized. Hence, an auctioneer node with greater
+offered capacity and lower reservation price relative to
+other auctioneers has a larger 𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚)).
+Using the 𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚)), value, we propose the
+following bidding rule
+
+(1)
+
+where, 𝜏fee ∈ [𝑓min, 𝑓max ] denotes the fee that node 𝑛𝑎
+charges as its forwarding fee. After nodes in 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 )
+receive an AUC message from 𝑛𝑎 , the bidding process is
+initiated.
+(2) Bidding Setup : In this phase, after receiving an AUC message, say a node 𝑛𝑏 ∈ 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ) offers bidding prices for
+the path from 𝑛𝑑 to 𝑛𝑎 . Note that node 𝑛𝑏 might receive
+several AUC messages from several auctioneer nodes, 𝑀,
+which are the nodes to whom 𝑛𝑏 has sent an RREQ message. These auctioneer nodes are added to the set 𝐴𝑁 (𝑛𝑏 ) =
+𝐴𝑁 (𝑛𝑏 , 1), 𝐴𝑁 (𝑛𝑏 , 2), . . . , 𝐴𝑁 (𝑛𝑏 , 𝑀), that is maintained locally by the node 𝑛𝑏 . For our purposes in this work, BID =
+[txid, 𝐵𝑖𝑑𝐶𝑎𝑝(𝑛𝑏 , 𝑃(𝑛𝑑 , 𝑚)), 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑚))].
+In particular, 𝐵𝑖𝑑𝐶𝑎𝑝(𝑛𝑏 , 𝑃(𝑛𝑑 , 𝑚)), where 𝑚 ∈ [1..𝑀], indicates the maximum amount that node 𝑛𝑏 is willing to send
+along the path 𝑃(𝑛𝑑 , 𝑚). The third field in the BID message
+is 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑚)) that denotes the bidding price that
+𝑛𝑏 offers to each auctioneer node 𝑚. We define two pricing
+rules for Auroch to determine the 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒.
+• Pricing Rule 1: To be able to participate in a bid, the bidding price should at least satisfy the reservation price set
+by the auctioneer. Given the forwarding fee range interval
+[𝑓min, 𝑓max ], a simple price rule for each auctioneer node
+𝑚 can be proposed as follows:
+𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑚)) = 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 ) + 𝜏1
+
+𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑚)) = 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 ) + 𝜏2
+
+(4)
+
+where 𝜏2 is given as follows
+𝜏2 = 𝑓min + 𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚))(𝑓max − 𝑓min )
+
+(5)
+
+Using this rule, we note that the higher the capacity and
+the lower the cost an auctioneer node offers, the more
+bidding price the bidder is willing to pay for the corresponding path. If a bidding node receives a single AUC
+tuple, pricing rule 1 is used. If a bidding node receives
+multiple AUC tuples, it could either use pricing rule 1 or
+pricing rule 2, but it is more optimal for the bidding node
+to use pricing rule 2.
+(3) Auction results and announcing: Upon receiving BID
+messages, the auctioneer node 𝑛𝑎 must determine how to
+allocate the path capacity along the path 𝑃(𝑛𝑑 , 𝑛𝑎 ) among
+bidding nodes. In particular, given a set of bidding node
+prices and the maximum bid capacities, The auctioneer node
+𝑛𝑎 should allocate the path capacity along the path among
+
+(2)
+
+]. 1
+
+where, 𝜏1 ←$ [𝑓min, 𝑓max
+• Pricing Rule 2: Pricing rule 1 did not take all information
+into account for bid price determination. For example, neither the number of auctioneers nor their offered capacities
+are incorporated. To account for these parameters, we define a normalized valuation price 𝑉 𝑡𝑃𝑟𝑖𝑐𝑒(𝑛𝑏 , 𝐴𝑁 (𝑛𝑏 , 𝑚))
+computed as follows:
+1 The values of 𝑓
+𝑚𝑖𝑛 and 𝑓𝑚𝑎𝑥 are 1, 10 respectively for Lightning Network [34].
+
+5
+
+1865
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+bidding nodes to maximize the total forwarding cost. it is
+important to note that node 𝑛𝑎 may receive BID messages
+from a number of 𝐵 nodes and these nodes are added to
+set 𝐵𝑁 (𝑛𝑏 ) = 𝐵𝑁 (1, 𝑛𝑎 ), 𝐵𝑁 (2, 𝑛𝑎 ), . . . , 𝐵𝑁 (𝐵, 𝑛𝑎 ), which is
+locally maintained locally by node 𝑛𝑎 .
+The described problem of path capacity allocation can be
+formulated as a linear optimization problem :
+
+min
+
+∑︁
+
+𝑝 𝑘(𝑛 ,𝑛 )
+𝑠 𝑑
+
+𝑚
+
+s.t.
+
+∑︁ 𝑘
+𝑝 (𝑛 ,𝑛 ) ≥ 𝑎𝑚𝑡
+
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 )𝑘 𝑝 𝑘(𝑛 ,𝑛 )
+𝑠
+
+𝑠
+
+∑︁ 𝑘
+∑︁
+𝑝 (𝑛 ,𝑛 ) ≤ 𝑎𝑚𝑡 +
+𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 )𝑘 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 )𝑘 (7c)
+𝑠
+
+max
+
+BidPrice(𝐴𝑁 (𝑏, 𝑛𝑎 ))Cap(𝑛𝑑 , 𝐵𝑁 (𝑏, 𝑛𝑎 ))
+
+(6a)
+
+Cap(𝑛𝑑 , 𝐵𝑁 (𝑏, 𝑛𝑎 )) ≤ Cap(𝑛𝑑 , 𝑛𝑎 ) ∀𝑏
+
+(6b)
+
+𝐶𝑎𝑝(𝑛𝑑 ,𝐵𝑁 (𝑏,𝑛𝑎 )) 𝑏
+
+s.t.
+
+∑︁
+
+(7b)
+
+𝑑
+
+𝑘
+𝑑
+
+𝑘
+𝑘
+𝑝 𝑘(𝑛 ,𝑛 ) ≤ 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 )𝑘 ∀𝑘
+𝑠 𝑑
+𝑝 𝑘(𝑛 ,𝑛 ) ≥ 0, ∀𝑘
+𝑠 𝑑
+
+∑︁
+
+(7a)
+
+𝑑
+
+(7d)
+(7e)
+
+Table 2: Notations Used
+
+𝑏
+
+Cap(𝑛𝑑 , 𝐵𝑁 (𝑏, 𝑛𝑎 )) ≤ BidCap(𝐵𝑁 (𝑏, 𝑛𝑎 ), 𝑃(𝑛𝑑 , 𝑛𝑎 )), ∀𝑏
+(6c)
+Cap(𝑛𝑑 , 𝐵𝑁 (𝑏, 𝑛𝑎 )) ≥ 0 ∀𝑏
+
+(6d)
+
+Notation
+𝜆
+𝑛
+(sk𝑖 , vk𝑖 )
+(SK𝑖 , VK𝑖 )
+
+The above problem is a linear optimization problem since
+the cost function as well as the constraints are linear in
+𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝑏, 𝑛𝑎 )). The constraint in Equation 6b ensures
+that the sum of maximum capacities of the bidders is less
+than or equal to path capacity along the 𝑃(𝑛𝑑 , 𝑛𝑎 ). Hence,
+this serves as an upper bound on the sum of the maximum
+capacities of the bidders. The constraint in Equation 6c, guarantees that the assigned path capacity 𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝐵, 𝑛𝑎 ))
+does not exceed the maximum amount that bidder is willing to send along the the path 𝑃(𝑛𝑑 , 𝑛𝑎 ).The last constraint
+(Equation 6d) enforces the non-negativity of the assigned
+maximum capacity. An auctioneer node 𝑛𝑎 determines to
+which node(s) the available path and path capacity should
+be allocated. To advertise the auction results, the auctioneer node sends the RREP message to the winning nodes.
+As stated earlier, the RREP consists of the following fields
+RREP = [txid, 𝑃(𝑛𝑑 , 𝑛𝑙 ), 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑙 ),
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑙 )]. The process of message replies and performing auctions is repeated until the source node 𝑛𝑠 becomes
+a bidding node and bids for the different paths from the
+auctioneer nodes.
+
+𝑛𝑠
+I𝑛𝑠
+𝑛𝑑
+𝑛𝑙
+𝑛𝑎
+𝑛𝑏
+RREQ
+RREP
+txid
+𝑃(𝑛𝑑 , 𝑛𝑠 )
+𝑃(𝑛𝑑 , 𝑛𝑙 )
+𝑓𝑚𝑖𝑛 , 𝑓𝑚𝑎𝑥
+P
+C
+F
+𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 )
+𝐴𝑁 (𝑛𝑏 )
+𝐵𝑁 (𝑛𝑎 )
+
+Route Selection: In this stage, node 𝑛𝑠 is to determine which of the
+available paths to use for routing payments. In particular, given the
+set of path costs and capacities, 𝑛𝑠 needs to send partial payments
+over these paths such that the total forwarding cost it has to pay is
+minimized. The payment allocation problem can be formulated as
+a linear optimization problem, which we describe below.
+Let P(𝑛𝑑 , 𝑛𝑠 ) = [𝑃(𝑛𝑑 , 𝑛𝑠 )1, 𝑃(𝑛𝑑 , 𝑛𝑠 )2, . . . , 𝑃(𝑛𝑑 , 𝑛𝑠 )𝐾 ] denote the
+set of 𝐾 paths between 𝑛𝑠 and 𝑛𝑑 . Furthermore, let C(𝑛𝑑 , 𝑛𝑠 ) =
+[𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 )1, 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 )2, . . . , 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 )𝐾 ] and F (𝑛𝑑 , 𝑛𝑠 ) = [
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 )1, 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 )2, . . . , 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 )𝐾 ] denote the sets of path
+capacities and costs, respectively. Let 𝑝 𝑘(𝑛 ,𝑛 ) denote the partial pay𝑠
+
+Description
+Security parameter
+Number of nodes in the PCN
+Node 𝑖’s long-term signing, verification keypair
+Node 𝑖’s temporary signing, verification keypair
+Sender Node
+Set of immediate neighbors of a 𝑛𝑠
+Destination Node
+Current node
+Auctioneer node
+Bidder node
+Route request message
+Route replay message
+Transaction ID
+Path from destination to sender
+Path from destination to current node along
+path 𝑃(𝑛𝑑 , 𝑛𝑠 )
+Minimum and maximum routing fees that
+can be charged by a node
+a list of available paths from 𝑛𝑠 to 𝑛𝑑
+a list of available paths capacities from 𝑛𝑠 to
+𝑛𝑑
+a list of available paths costs from 𝑛𝑠 to 𝑛𝑑
+a set of bidder nodes for node 𝑛𝑎
+a set of verified auctioneer nodes for bidder
+𝑛𝑏
+a set of verified bidding nodes for auctioneer
+𝑛𝑎
+
+The above problem is a linear optimization problem since the
+cost function as well as the constraints are linear in 𝑝 𝑘(𝑠,𝑑) . The
+constraint in Equation 7b ensures that the sum of partial payments
+is either greater than or equal to the original payment amount
+𝑎𝑚𝑡. Hence, this serves as a lower bound on the sum of payments.
+The payment amount on each path should take the path’s cost
+into consideration. Thus, the total amount to be payed is upper
+bounded by the sum aggregate of all forwarding cost across all
+the paths between 𝑛𝑠 and 𝑛𝑑 . This is ensured by the constraint
+in Equation 7c. The constraint in Equation 7d, guarantees that a
+
+𝑑
+
+ment over the 𝑘 𝑡ℎ path, where 𝑘 ∈ [1..𝐾], and 𝑚 ∈ [1..𝑀]. The
+payment allocation problem can be stated as follows:
+6
+
+1866
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+(a) Step 1: RREQ sent by Alice propagated. (b) Step 3: Ivan and Sam start the auction. (c) Step 5: Ivan & Sam send auction results.
+Step 2: RREP issued by Chloe
+Step 4: Peter and Alexa send bid
+Step 6: Peter & Alexa start auction.
+Step 7: Alice sends bid.
+
+(d) Step 8: Peter & Alexa send auction
+result.
+
+(e) Step 9: Alice splits payment over
+multiple paths
+
+Figure 2: The step-by-step process of the auction mechanism in Auroch (Sender: Alice, Receiver: Chloe)
+BID = [123, 20, 2.5],BID = [123, 25, 1.5], and forwards them to Ivan
+and Sam, respectively.
+In Figure 2c, Step 5 : Upon receiving BID messages, Sam receives one BID message. Subsequently, Sam constructs a RREP =
+[123, (𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚, 𝐴𝑙𝑒𝑥𝑎), 25, 1.5] message, sending it Alexa. In contrast, Ivan receives two BID messages.So, Ivan will allocate 30 tokens to Peter and Alexa by solving a linear optimization problem
+represented by Equation 6 to maximize his profit. Ivan constructs
+two RREP messages RREP = [123, (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝐴𝑙𝑒𝑥𝑎), 20, 2.5], RREP =
+[123, (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝑃𝑒𝑡𝑒𝑟 ), 10, 2.3]. These messages are then sent to
+Alexa and Peter. Step 6 : Upon receiving RREP messages, Peter
+and Alexa start the auction. Peter computes the Reservation Price
+( 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒) using Equation 1, assuming a value of 2.5. Peter sets
+the path capacity along the path 𝑃(𝐶ℎ𝑙𝑜𝑒, 𝑃𝑒𝑡𝑒𝑟 ) to 10 tokens. Peter constructs AUC = [123, 10, 2.5] and sends it to Alice. MeanWhile, Alexa conducts auctions for two paths (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝐴𝑙𝑒𝑥𝑎)
+and (𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚, 𝐴𝑙𝑒𝑥𝑎). Alexa computes the Reservation Price (
+𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒) for each path using Equation 1. The 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒 for the paths
+(𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝐴𝑙𝑒𝑥𝑎) and (𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚, 𝐴𝑙𝑒𝑥𝑎) are 2.7 and 1.7, respectively. Alexa constructs two AUC messages AUC = [123, 25, 1.7],
+AUC = [123, 20, 2.7] and sends them to Alice. Step 7: Alice receives three AUC messages. Consequently, Alice computes Bid
+Price (𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒 ) using Equation 4 for the offers. Alice constructs
+BID message BID = [123, 10, 2.8] and sends it to Peter. Furthermore, Alice constructs two AUC messages : BID = [123, 2, 2.8],
+BID = [123, 25, 2] , which Alice sends to Alexa.
+In Figure 2d, Step 8: Peter and Alexa announce the result. Peter
+constructs RREP = [123, (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝑃𝑒𝑡𝑒𝑟, 𝐴𝑙𝑖𝑐𝑒), 10, 5.1] and forwards it to Alice. Similarly, Alexa constructs two RREP messages:
+RREP = [123, (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛, 𝐴𝑙𝑒𝑥𝑎, 𝐴𝑙𝑖𝑐𝑒),
+
+partial payment over each path does not exceed the path’s capacity.
+The last constraint (Equation 7e) checks if the value of each partial
+payment is non-negative.
+
+4.2
+
+Auroch Workflow
+
+As an example, consider a simplified network as shown in Figure 2,
+where a sender node Alice intends to pay a payment of amt to a
+receiver node Chloe.
+In Figure 2c, Step 1 : Alice constructs the RREQ=[123] and
+sends it to her neighbors, Peter and Alexa. The RREQ=[123] message propagates through the network until it receives the destination, Chloe. Step 2 : Upon receiving the RREQ=[123] messages,
+Chloe generates two routing reply (RREP) messages : RREP =
+[123, (𝐶ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛), 0, 0], RREP = [123, (𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚), 0, 0]. Chloe sends
+them to Ivan and Sam, respectively.
+In Figure 2b, Step 3 : Upon receiving RREP messages, Ivan and
+Sam initiate the auction phase. Ivan computes the Reservation Price
+(𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒) using Equation 1, assuming the value 2. Subsequently,
+Ivan sets the path capacity along the path 𝑃(𝑐ℎ𝑙𝑜𝑒, 𝐼𝑣𝑎𝑛) as 30 tokens.
+Ivan generates two AUC = [123, 30, 2], AUC = [123, 30, 2] messages,
+individually sends them to Peter and Alexa. Similarly, Sam computes
+the Reservation Price (𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒) using Equation 1, assuming a value
+of 1. Sam sets the path capacity along the path 𝑃(𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚) to 40
+tokens. Sam generates one AUC = [123, 40, 1] message and forwards
+it to Alexa. Step 4 : With AUC messages in hand, Peter and Alexa
+start bidding. Peter receives one AUC message only from Ivan and
+proceeds to calculate Bid Price (𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒) using Equation 2. Peter
+constructs BID = [123, 22, 2.8] and transmits it to Ivan. In contrast,
+Alexa receives two AUC messages. Utilizing Equation 4, Alexa
+computes Bid Price 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒 . She constructs two BID messages
+7
+
+1867
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+2, 5.3], RREP = [123, (𝐶ℎ𝑙𝑜𝑒, 𝑆𝑎𝑚, 𝐴𝑙𝑒𝑥𝑎, 𝐴𝑙𝑖𝑐𝑒), 20, 4.3], and sends
+them to Alice.
+In Figure 2e, Step 9: Upon receiving RREP messages, Alice has
+all available paths toward the Chloe along with the maximum
+payments that can be accommodated over these paths and their
+corresponding cost. Alice can divide its payment over these routes
+(see Step 9 in Figure 2e ) by employing the linear optimization
+problem as stated in Equation 7a.
+
+5
+
+Protocol 2: Route Auctioning: Bidding Setup Phase
+1 𝑛𝑏 maintains a set 𝐴𝑁 (𝑛𝑏 ) = ∅
+2 𝑛𝑏 , where 𝑛𝑏 ∈ 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ), does ∀ AUC messages
+
+if Verify𝑉 𝐾𝑛𝑎 (AUC) → 0 then
+Do nothing
+5 else
+6
+𝑛𝑏 adds each auctioneer node 𝐴𝑁 (𝑛𝑏 , 𝑛𝑎 ) to set 𝐴𝑁 (𝑛𝑏 )
+7 if |𝐴𝑁 (𝑛𝑏 )|== 1 then
+8
+𝑛𝑏 sets the 𝐵𝑖𝑑𝐶𝑎𝑝(𝑛𝑏 , 𝑃(𝑛𝑑 , 𝑛𝑎 ))
+9
+𝑛𝑏 chooses a random 𝜏1 ∈ [𝑓𝑚𝑖𝑛 , 𝑓𝑚𝑎𝑥 ]
+10
+𝑛𝑏 computes 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑛𝑎 )) using Price Rule 1 in
+Equation 2
+11
+𝑛𝑏 constructs BID message, 𝑛𝑏 does SignSK𝑛 (BID)→
+𝑏
+𝜎BID
+12
+𝑛𝑏 sends BID message along with 𝜎BID to auctioneer
+13 else if |𝐴𝑁 (𝑛𝑏 )|> 1 then
+14
+for each 𝑚 ∈ 𝐴𝑁 (𝑛𝑏 ) do
+3
+
+4
+
+CONSTRUCTION
+
+Auroch consists of three stages: setup, route auctioning, and payment. For ease of reference, we give the table of notations used in
+Table 2.
+Setup and Broadcast: This stage is described in detail in Appendix A. At a high level, this protocol handles the generation of the
+signing and verification key pairs of a node, and the creation and
+transmission of a transaction identifier, txid.
+
+15
+
+Protocol 1: Route Auctioning: Auction Setup Phase
+1 𝑛𝑑 receives RREQ message tuple from its neighbors
+
+16
+
+∀ nodes 𝑛𝑎 ∈ 𝑃𝑎𝑟𝑒𝑛𝑡(𝑛𝑑 ), 𝑛𝑑 constructs an individual tuple
+RREP = [txid, 𝑃(𝑛𝑑 , 𝑛𝑎 ), 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ), 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 )]
+3 𝑛𝑑 SignSK (RREP)→ 𝜎 RREP and 𝑛𝑑 sends RREP along with
+𝑛𝑑
+𝜎RREP to each node 𝑛𝑎 ∈ 𝑃𝑎𝑟𝑒𝑛𝑡(𝑛𝑑 ).
+4 On receiving RREP message with 𝜎RREP ,
+5 Each node 𝑛𝑎 does if VerifyVK (RREP) →0 then
+𝑛𝑑
+6
+Do nothing
+7 else
+8
+Each 𝑛𝑎 computes 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒 using Equation 1
+9
+Each 𝑛𝑎 construct AUC = [txid,
+𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ), 𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒(𝑛𝑑 , 𝑛𝑎 )] message to all
+nodes 𝑛𝑏 ∈ 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 )
+10
+Each 𝑛𝑎 does SignSK𝑛𝑎 (AUC)→ 𝜎AUC
+11
+Each 𝑛𝑎 sends AUC message along with 𝜎AUC to each
+node 𝑛𝑏 ∈ 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ).
+/* Route Auctioning: End Auction Setup Phase */
+2
+
+17
+18
+
+𝑛𝑏 sets 𝐵𝑖𝑑𝐶𝑎𝑝(𝑛𝑏 , 𝐴𝑁 (𝑛𝑑 , 𝑚)) for each auctioneer
+𝑚 ∈ 𝐴𝑁 (𝑛𝑏 )
+𝑛𝑏 computes 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒(𝐴𝑁 (𝑛𝑏 , 𝑚)) using Price Rule 1 in
+Equation 2 or using Price Rule 2 in Equation 3
+𝑛𝑏 constructs BID message, 𝑛𝑏
+SignSK𝑛 (BID)→ 𝜎BID
+𝑏
+
+19
+
+𝑛𝑏 sends BID message along with 𝑛𝑏 𝜎BID to auctioneer
+𝐴𝑁 (𝑛𝑏 , 𝑚)
+/* Route Auctioning: End Bidding Setup Phase */
+
+Bidding Setup Protocol 2 This protocol handles the bidding setup
+phase in Auroch, upon receiving BID messages. 𝑛𝑏 verifies the signature of the auctioneer node 𝑛𝑎 on the AUC tuples. If the signature
+verification is unsuccessful, then the AUC tuple is discarded. Upon
+successfully verifying the signature of 𝑛𝑎 on the AUC message, 𝑛𝑏
+adds auctioneer 𝑛𝑎 to set 𝐴𝑁 (𝑛𝑏 ) that it locally maintains (Lines 1-6).
+If the number of auctioneers for node 𝑛𝑏 is 1, 𝜏1 is chosen randomly
+from a specified range. 𝑛𝑏 then determines the path capacity that it
+is willing to send along the path 𝑃(𝑛𝑑 , 𝑛𝑎 ). 𝑛𝑏 computes 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒
+for auctioneer 𝑛𝑎 using Equation 2. Once the 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒 has been
+computed, bidder 𝑛𝑏 constructs the BID message and sends this
+message along with its signature to each auctioneer 𝑛𝑎 (Lines 712).If the number of auctioneers for the node 𝑛𝑏 is more than 1, 𝑛𝑏
+computes 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒 for each auctioneer 𝑛𝑎 using Equation 4. Once
+the 𝐵𝑖𝑑𝑃𝑟𝑖𝑐𝑒 has been computed for each auctioneer, 𝑛𝑏 constructs
+the BID message, and sends this message along with its signature
+to each node 𝑛𝑎 (Lines 13-19).
+Auction results and Announcing Protocol 3: Upon receiving bidding messages from all bidding nodes interested in the auction. The
+auctioneer 𝑛𝑎 verifies each BID message. If the verification is successful, each bidder node 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ) is added to 𝐵𝑁 (𝑛𝑎 ) (Lines 1-6).
+If there is only one bidder in 𝐵𝑁 (𝑛𝑎 ), the auctioneer 𝑛𝑎 updates the
+path 𝑃(𝑛𝑑 , 𝑛𝑎 ) by incorporating 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ) into the path. If there
+is only one bidder in 𝐵𝑁 (𝑛𝑎 ), auctioneer node 𝑛𝑎 updates 𝑃(𝑛𝑑 , 𝑛𝑎 )
+by adding 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ) into the path 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )). Subsequently,
+Auctioneer node 𝑛𝑎 updates 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) into 𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+
+Auction Setup Protocol 1: This protocol handles the auction setup
+phase in Auroch, once the route request RREP messages that are
+broadcast by 𝑛𝑠 reach the intended 𝑛𝑑 , 𝑛𝑑 constructs the RREP
+message and sends it along with its signature (created using its
+temporary signing key) on the message to each auctioneer node 𝑛𝑎
+in the set 𝑃𝑎𝑟𝑒𝑛𝑡(𝑛𝑑 ) from whom it has received an RREQ message
+(Lines 1-5). Each auctioneer node 𝑛𝑎 , upon successfully verifying
+the 𝑛𝑑 ’s signature on the RREP message, picks a routing fee, denoted by 𝜏fee in the range [𝑓𝑚𝑖𝑛 , 𝑓𝑚𝑎𝑥 ], where 𝑓𝑚𝑖𝑛 and 𝑓𝑚𝑎𝑥 are
+the minimum and maximum values of the routing fees. In Auroch
+we picked the 𝑓𝑚𝑖𝑛 as 1 Satoshi and 𝑓𝑚𝑎𝑥 as 10 Satoshi [34]. The
+auctioneer 𝑛𝑎 then computes the reservation price (𝑅𝑒𝑠𝑃𝑟𝑖𝑐𝑒), according to the Equation 1. The node 𝑛𝑎 constructs an AUC message
+tuple and sends this tuple along with its signature on the message
+(created using the temporary signing key of 𝑛𝑎 ) to all of its bidder
+nodes 𝑛𝑏 in 𝐵𝑖𝑑𝑑𝑒𝑟 (𝑛𝑎 ) from whom it has received the initial RREQ
+message (Lines 8–11).
+8
+
+1868
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Protocol 3: Route Auctioning: Auction Results and Announcing Phase
+
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )), which is the total cost of forwarding payment along the path 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )).Auctioneer node 𝑛𝑎 constructs the RREP message and sends it with its signature to bidder
+node 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ) (Lines 7-12). If the auctioneer 𝑛𝑎 has more than
+1 bidder node in set 𝐵𝑁 (𝑛𝑎 ), then 𝑛𝑎 solves Equation 6. By solving the path capacity allocation problem, Auctioneer 𝑛𝑎 allocates
+the maximum capacity 𝑀𝑎𝑥𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) in protocol 1 along the
+𝑃(𝑛𝐷 , 𝑛𝑎 ) among bidding nodes M in set 𝐵𝑁 (𝑛𝑎 ) in such way maximize his profit. for each 𝑚 auctioneer in the set 𝐵𝑁 (𝑛𝑎 ),Auctioneer
+node 𝑛𝑎 updates 𝑃(𝑛𝑑 , 𝑛𝑎 ) into 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑚, 𝑛𝑎 )) by adding bidder node 𝐵𝑁 (𝑚, 𝑛𝑎 ). Auctioneer node 𝑛𝑎 updates 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) into
+𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝑚, 𝑛𝑎 )) Auctioneer node 𝑛𝑎 updates 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 ) into
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑚, 𝑛𝑎 )). Auctioneer node 𝑛𝑎 updates 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 ) into
+𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑚, 𝑛𝑎 )).𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )). Finally, Auctioneer node 𝑛𝑎 constructs the RREP message and sends it with its signature to bidder
+node 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑚, 𝑛𝑎 )) (Lines 13-20).
+Route Selection Protocol 4 : This is the final stage in our construction. This protocol handles the route selection between the
+𝑛𝑠 and 𝑛𝑑 . Upon receiving RREP messages, Node 𝑛𝑠 verifies the
+signature of node 𝑛𝑎 on each RREP message. Upon successful verification, 𝑛𝑠 adds 𝑃(𝑛𝑑, 𝑛𝑠 ),𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 ), and 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 ) to P,C, and
+F , respectively. 𝑛𝑠 allocates the partial payments among the available paths by solving the linear optimization problem Equation 7.
+The equation, as described earlier, minimizes the sender’s overall
+routing cost and also maximizes the profit of each intermediate
+node.
+Optimizations While Auroch provides sender privacy, the identity of the receiver is revealed during the path construction. However, since each node in Auroch uses a pseudonymous identity
+within the network, the real identity is not to any other node except the sender. These identities can be generated at periodic time
+intervals (which can be a system parameter) to provide an additional degree of privacy. Apart from this, other techniques such as
+onion routing [16] and adding dummy nodes by the receiver can
+be employed, which do not require any additional modifications to
+the structure or protocols of Auroch.
+
+/* 𝑛𝑎 is the auctioneer
+
+*/
+
+1 𝑛𝑎 maintains a set 𝐵𝑁 (𝑛𝑎 ) = ∅
+
+∀ BID messages, 𝑛𝑎 checks
+if Verify𝑉 𝐾𝑛 (BID) → 0 then
+𝑏
+4
+Do nothing
+5 else
+6
+𝑛𝑎 adds each bidder 𝑛𝑏 to set 𝐵𝑁 (𝑛𝑎 )
+7 if |𝐵𝑁 (𝑛𝑎 )|== 1 then
+8
+𝑛𝑎 updates 𝑃(𝑛𝑑 , 𝑛𝑎 ) to 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )) and updates
+𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) to 𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+9
+𝑛𝑎 updates 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 ) to 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+10
+𝑛𝑎 constructs
+RREP = [txid, 𝑃(𝑛𝑑 , 𝑛𝑏 ), 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑏 ), 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑏 )]
+11
+SignSK𝑛𝑎 (RREP)→ 𝜎RREP and 𝑛𝑎 sends RREP along
+with 𝜎RREP to 𝑛𝑏
+12 else if |𝐵𝑁 (𝑛𝑏 )|> 1 then
+13
+𝑛𝑏 solves Equation 6
+14
+for each 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ) ∈ 𝐵𝑁 (𝑛𝑎 ) do
+2
+
+3
+
+15
+
+𝑛𝑎 updates 𝑃(𝑛𝑑 , 𝑛𝑎 ) to 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+𝑛𝑎 updates 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) to 𝐶𝑎𝑝(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+17
+𝑛𝑎 updates 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 ) to 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 ))
+18
+𝑛𝑎 constructs
+RREP = [txid, 𝑃(𝑛𝑑 , 𝑛𝑏 ), 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑏 ), 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑏 )]
+19
+𝑛𝑎 SignSK𝑛𝑎 (RREP)→ 𝜎RREP and 𝑛𝑎 sends RREP along
+with 𝜎RREP to 𝑛𝑏
+/* Route Auctioning: End Auction Results and
+Announcing Phase
+*/
+16
+
+Protocol 4: Route Selection
+/* Protocol 1, Protocol 2, and Protocol 3 are
+repeated until the source node 𝑛𝑠 becomes a
+bidding node and bids for the different paths
+from the auctioneer nodes.
+*/
+1 𝑛𝑠 maintains the list P = ∅, C = ∅, and F = ∅
+2 𝑛𝑠 receives RREP messages
+3 for each RREP message do
+4
+IfVerifyVK𝑛𝑎 (RREP) → 0 Do nothing
+5
+else
+6
+𝑛𝑠 adds 𝑃(𝑛𝑑 , 𝑛𝑠 ) to P
+7
+𝑛𝑠 adds 𝐶𝑎𝑝(𝑛𝑑 , 𝑛𝑠 ) to C
+8
+𝑛𝑠 adds 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑠 ) to F
+9 𝑛𝑠 solves Equation 7
+/* End Route Selection
+*/
+
+6 EVALUATION
+6.1 Experiment Setup
+We implemented Auroch and other routing protocols using the
+NetworkX library in Python [15] and used the Elliptic Curve Digital Signature Algorithm, ECDSA, [9] for signature creation and
+verification. ECDSA was chosen for its better efficiency. However,
+Auroch can be deployed using any digital signature algorithm. We
+ran our experiments on a desktop computer with Intel (𝑅) Core TM
+i7-10700 CPU clocked at 2.90 GHz and equipped with 32 GB RAM.
+Dataset: We evaluated the performance of Auroch on a snapshot
+of the Lightning Network topology from November 27, 2021 [6, 24].
+The snapshot contains 18,331 nodes, and 80,918 channels with mean
+channel capacity 4056152.35 satoshi and median channel capacity
+is 1000000 satoshi (this provides us information on how funds are
+distributed among Lightning Network channels). In Lightning Network, the channel balance in a payment channel at the time of
+channel opening is publicly available on the blockchain. However,
+the local channel balance of nodes, which changes as a result of
+nodes being involved in transactions is not publicly available.
+
+, which is path capacity along the path 𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )). Auctioneer node 𝑛𝑎 updates 𝐶𝑜𝑠𝑡𝑎𝑝(𝑛𝑑 , 𝑛𝑎 ) into 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )),
+which is the total cost of forwarding payment along the path
+𝑃(𝑛𝑑 , 𝐵𝑁 (𝑛𝑏 , 𝑛𝑎 )). Auctioneer node 𝑛𝑎 updates 𝐶𝑜𝑠𝑡(𝑛𝑑 , 𝑛𝑎 ) into
+9
+
+1869
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+Figure 3: Performance of Routing Protocols on Lightning Network data with scaled payment channel capacities (× 30 , × 50, ×
+70)
+Benchmarks: We implement and experimentally compare Auroch
+with several other comparable routing algorithms, specifically with
+shortest path routing (Dijkstra’s algorithm), Speedymumurs [26]
+and Spider [29]. Since Auroch is a routing protocol that routes a
+single transaction along several paths, concurrency plays an important role (all the splits of the transaction would need to reach
+the receiver at the same time to ensure correct processing of the
+transaction amount). The routing protocols Spider and Speedymurmurs provide support for concurrent payments. In addition, Auroch
+was also compared to an implementation of Dijkstra’s shortest path
+algorithm since this is currently implemented by the real-world
+PCN, Lightning Network. Since standard Dijkstra’s algorithm does
+not have any notion of minimum liquidity (which is relevant for
+PCNs), we implemented a modified version of Dijkstra’s shortest
+path algorithm by enumerating all paths from sender to receiver in
+ascending order of path length and minimum capacities, and then
+picking the shortest path with the minimum satisfying liquidity
+for each transaction. The running time of Dijkstra’s algorithm depends on the priority queue implementation used [5]. NetworkX
+library uses a binary heap to implement the priority queue, which
+is appropriate for us, since for our network graph, 𝐺(𝑉 , 𝐸), |𝐸| ≪
+|𝑉 | 2 /𝑙𝑜𝑔|𝑉 |. In shortest path routing, the sender knows the entire
+network topology and uses source routing to find a path from herself to the receiver. Furthermore, the sender needs to know the
+identities of all intermediate nodes along the path and also the base
+
+fees and the rate fees charged. This is a significant drawback of using shortest path algorithms for routing in PCNs, and would apply
+regardless of the specific algorithm used, e.g., Dijkstra’s algorithm,
+Bellman-Ford algorithm, etc. For all our experiments, we randomly
+sampled our transaction dataset to pick amounts to be routed along
+with the fees. We note that the SpeedyMurmurs [26] routing protocol does not have any notion of routing fees; we have augmented it
+with routing fees for a fair comparison with Auroch. For any reason,
+if the path chosen by the sender does not have enough liquidity or if
+the fees chosen by the sender is not sufficient, the transaction fails.
+This exemplifies the major drawback of SpeedyMurmurs in that
+transaction amounts (and potentially fees) for a given transaction
+path are randomly picked, without the sender knowing if there is
+sufficient liquidity along that path to the receiver. In Spider [29], the
+sender knows the entire network topology (similar to the shortest
+path algorithm) and also minimum value that can be transacted
+along a given path. The sender splits the total amount according to
+this minimum value and the sender also knows the total base fees
+and the rate fees charged along the path to the receiver.
+Metrics: In our experiments we measure the success ratio, success
+volume, and the cost of routing. The success volume and success
+ratio are important indicators of the performance of a routing protocol. We measure the cost of routing payments to see which routing
+protocol is most economical to users. The success ratio is defined
+10
+
+1870
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Parameters: We set the number of transactions to 5000, 7000, and
+9000, which is the approximate number of transactions recorded per
+month (January, February, and April, respectively) on the Ripple
+ledger during the year 2021. The transaction data in Ripple, such as
+the transaction amounts, currency, time stamp of transaction, etc
+are publicly available and can be accessed using the Ripple APIs
+[23]
+To test scalability, we use number of transactions from Ripple
+PCN, since Lightning Network datasets have no information about
+the number of transaction and transaction values. In our experiments, the source and the destination nodes of a transaction are
+selected randomly and the transaction amount is randomly sampled from the Bitcoin trace for transaction volumes [33]. The cost
+of a payment from a sender to the receiver is computed for every transaction and all the paths along which all the splits of this
+transaction are routed. The transaction fees on each path is comP
+puted as 𝑛𝑖=1 Base Fee𝑖 + (rate Fee𝑖 × amt), where 𝑛 is the total
+number of intermediate nodes between the sender and receiver. In
+our experiments, we assume the base fees along every path to be 1
+satoshi and the rate fees are randomly sampled in the range [0..10]
+satoshis. For the various routing schemes, we set the number of
+disjoint paths for the Spider as 4 similar to [29], and set 3 landmarks
+for SpeedyMurmurs similar to [26]. We have chosen these routing
+protocols for our comparison since they either offer comparable
+security/privacy properties to Auroch or support multiple path payments which is one of the key aspects in the design of Auroch. We
+varied the capacity on each channel by multiplying the channel
+capacity by 30, 50, and 70 to study the channel capacity’s impact
+on our metrics across all routing protocols. All experiments were
+averaged over 20 runs.
+
+6.2
+
+Results
+
+We compare the performance of four routing protocols on our
+dataset by varying transaction numbers and channel capacities.
+Figure 4 depicts the performance of the routing protocols on 5000,
+7000, and 9000 transactions. Figure 4 shows that Auroch has the
+largest success volume of all protocols, which is due to its ability to
+process a large volume of concurrent transactions. SpeedyMurmurs
+and Shortest Path protocols have the lowest success ratio among
+all protocols, which is due to the fact that the payment in SpeedyMurmurs happens on the fly, and the shortest path algorithm uses
+only a single path to transmit the payment. If there is no path
+with satisfying liquidity, the transaction fails, thus decreasing the
+success ratio. On the other hand, the Auroch protocol uses RREP
+messages, which tell the sender the path capacity along each path in
+a fully decentralized way, without the sender needing to know the
+network topology, which results in a significantly higher success
+ratio. Similarly, the Spider routing protocol uses probe messages to
+get the minimum patg capacity along the paths before sending the
+payment. So, using RREP messages and probing messages helps
+increase the success ratio.
+From Figure 4, we can see that Auroch has the lowest routing cost
+among all routing protocols. Spider, SpeedyMurmurs, and Shortest
+path routing are up to 2.2x, 2.6x, and 2.1x, respectively, more expensive than Auroch. Figure 3 depicts the performance of the routing
+protocols when the channel capacity on each link in the networks
+
+Figure 4: Performance of Routing Protocols on Lightning
+Network Data
+
+as the ratio between the number of payments that were successfully routed to the total number of payments attempted. Success
+volume is defined as the ratio between the total volume (amount)
+of payments successful to the total volume (amount) of payments
+attempted. The cost of routing is defined as the ratio between the
+total cost of routing all the successful transactions at once and
+the volume of all the payments that were routed successfully. For
+an ideal routing protocol, one would expect the total transaction
+volume to be significantly higher than the total transaction fees,
+hence the ratio of the total transaction fees to the total transaction
+volume needs to be as low as possible.
+11
+
+1871
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+The profit of each intermediate node involved in the transaction
+is maximized. 3) Auroch provides the sender with a decentralized
+pathfindig mechanism as opposed to the centralized source routing.
+
+is varied by multiplying it with 70, 50, or 30. The purpose of multiplying the channel capacity with these values shows that Auroch
+performs better (especially in terms of success volume) when there
+is sufficient capacity in the channels of the nodes with their immediate neighbors. As the capacity rises, more transactions begin to
+succeed among all of the protocols, which is expected. According
+to Figure 3 Auroch again has the lowest routing cost of all protocols.
+Spider, SpeedyMurmurs, and Shortest path routing are up to 2.1x,
+2.7x, and 1.8x, respectively, more expensive than Auroch. The lowest routing cost of Auroch is due to the fact that with larger channel
+capacities, more intermediate nodes become available for forwarding payments. The increase in the number of willing nodes and the
+increased channel balance result in a reduction in the routing cost.
+Furthermore, Auroch uses linear optimization to decrease the cost
+of routing. Overall, our experiments show that Auroch achieves
+the main goal of minimizing the transaction fees per token. When
+the intermediate node acts as an auctioneer, it selects the bidder
+node that offers the highest price. On the other hand, when the
+intermediate node acts as a buyer node it aims to pay the lowest
+price with the highest capacity. Thus Auroch outperforms other
+comparable routing protocols in terms of our chosen metrics.
+
+7
+
+Theorem 7.1. Let FA U R O C H be an ideal functionality for Auroch.
+Let A be a probabilistic polynomial-time (PPT) adversary for Auroch,
+and let S be an ideal-world PPT simulator for FA U R O C H . Auroch
+UC-realizes FA U R O C H for any PPT distinguishing environment Z.
+
+8
+6.3
+
+Auroch SECURITY ANALYSIS
+
+In this section, we provide a formal analysis of Auroch in the UC
+framework [2]. Protocols which are composed of multiple components are usually proven secure in UC framework [10, 11, 13, 14, 17].
+We define an ideal functionality FA U R O C H , that consists of
+five functionalities: F𝑖𝑛𝑖𝑡 , F𝐴𝑈 𝐶 , F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 Fℎ𝑡𝑙𝑐 , F𝐵𝐶 . We use the
+F𝑠𝑖𝑔 functionality [3] and one helper functionality F𝑠𝑖𝑔 [3]. All
+the functionalities maintain three tables, utable, txtable, BCTable.
+These tables are updated by these functionalities with various tuples
+as required. Due to space constraints, we give the definitions of the
+of the ideal functionalities and the proof of the following theorem
+in Appendix B.
+
+Tradeoffs
+
+CONCLUSION
+
+In this work, we study the pathfinding and multipath payment routing problem in PCNs. We propose Auroch, a distributed pathfinding
+and routing protocol that provides incentives for intermediate nodes
+to collaborate in route formation while maximizing their profit and
+minimizing the total payment cost for the sender. Auroch also supports concurrency and takes into account the dynamic channel
+balance of a node. We examined Auroch on real-world transaction
+data to show its effectiveness, and we validated its security within
+the UC framework.
+
+In Auroch, the 𝑛𝑠 uses broadcasting to find a path to the 𝑛𝑑 . This
+incurs a significant amount of communication overhead. In the
+worst case, the maximum number of hops the RREQ message tuple
+will travel is equal to the diameter of the network. This overhead is
+better than the overhead of source routing protocol currently being
+implemented in Lightning Network [12], where each node stores the
+network topology in its local storage causing a tremendous storage
+overhead at each node. The snapshot of the network topology stored
+at each node needs to be updated every time a new node joins and
+leaves the PCN, which means that all the nodes in the PCN would
+need to be online all the time, causing wastage of resources and
+bandwidth or offline node would initially need to synchronize with
+the network before being involved in transactions, which makes
+instantaneous payments impossible. Sometimes, nodes in Lightning Network operate from resource constrained devices. In such
+cases, the storage overhead incurred will be even more. Apart from
+this, Auroch aims at reducing the overall routing cost of the 𝑛𝑠 and
+also maximizes the profit of the intermediate nodes, which is not
+currently achieved in PCNs. In addition to these, Auroch introduces
+additional delays in the PCN due to its auctioning/bidding stages,
+signature creation/verification during these stages and solving the
+linear optimization problem to present the sender with multiple
+paths to the receiver. These series of operations would have to be
+performed for every transaction that is processed using Auroch. If
+we assume the delay (in terms of additional transaction processing
+time) caused by auction/bidding to be 𝛼, the delay caused by signature creation/verification during the auction/bidding stages to be 𝛽
+and the delay caused by solving the linear optimization problem
+to be 𝛾, the total delay caused by Auroch (for every transaction),
+when deployed on a PCN such as Lightning Network would be
+(𝛼 + 𝛽 + 𝛾). This additional delay in transaction processing however, provides us with the following advantages: 1) The overall
+routing cost of the sender is minimized across multiple paths. 2)
+
+ACKNOWLEDGMENTS
+This material is based upon work supported by the National Science
+Foundation under Award No. 2148358, 1914635, and the Department
+of Energy under Award No. DE-SC0023392. Any opinions, findings
+and conclusions or recommendations expressed in this material are
+those of the authors and do not necessarily reflect the views of the
+National Science Foundation and the Department of Energy.
+
+12
+
+1872
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+REFERENCES
+
+[29] Vibhaalakshmi Sivaraman, Shaileshh Bojja Venkatakrishnan, Kathleen Ruan,
+Parimarjan Negi, Lei Yang, Radhika Mittal, Giulia Fanti, and Mohammad Alizadeh.
+2020. High throughput cryptocurrency routing in payment channel networks. In
+USENIX Symposium on Networked Systems Design and Implementation (NSDI).
+[30] Trampoline routing [n. d.]. Trampoline payments. https://lightningprivacy.com/
+en/blinded-trampoline
+[31] P. F. Tsuchiya. 1988. The Landmark Hierarchy: A New Hierarchy for Routing in
+Very Large Networks. In Symposium Proceedings on Communications Architectures
+and Protocols (Stanford, California, USA) (SIGCOMM ’88). Association for Computing Machinery, New York, NY, USA, 35–42. https://doi.org/10.1145/52324.52329
+[32] Visa [n. d.]. Visa. https://usa.visa.com/dam/VCOM/download/corporate/media/
+visanet-technology/visa-net-booklet.pdf. Accessed: 2023-09-18.
+[33] Peng Wang, Hong Xu, Xin Jin, and Tao Wang. 2019. Flash: efficient dynamic
+routing for offchain networks. In Proceedings of the 15th International Conference
+on Emerging Networking Experiments And Technologies. 370–381.
+[34] Philipp Zabka, Klaus-T Foerster, Stefan Schmid, and Christian Decker. 2022.
+Empirical evaluation of nodes and channels of the lightning network. Pervasive
+and Mobile Computing 83 (2022), 101584.
+[35] Kun Zhang, Rui Wang, and Depei Qian. 2010. Aim: An auction incentive mechanism in wireless networks with opportunistic routing. In 2010 13th IEEE International Conference on Computational Science and Engineering. IEEE, 28–33.
+[36] Yang Zhang, Chonho Lee, Dusit Niyato, and Ping Wang. 2012. Auction approaches
+for resource allocation in wireless systems: A survey. IEEE Communications
+surveys & tutorials 15, 3 (2012), 1020–1041.
+[37] Yuhui Zhang and Dejun Yang. 2021. Robustpay+: Robust payment routing
+with approximation guarantee in blockchain-based payment channel networks.
+IEEE/ACM Transactions on Networking 29, 4 (2021), 1676–1686.
+[38] Yuhui Zhang, Dejun Yang, and Guoliang Xue. 2019. Cheapay: An optimal algorithm for fee minimization in blockchain-based payment channel networks. In
+ICC 2019-2019 IEEE International Conference on Communications (ICC). IEEE, 1–6.
+
+[1] Benjamin Brooks and Songzi Du. 2021. Optimal auction design with common
+values: An informationally robust approach. Econometrica 89, 3 (2021), 1313–
+1360.
+[2] Ran Canetti. 2001. Universally composable security: A new paradigm for cryptographic protocols. In Proceedings 42nd IEEE Symposium on Foundations of
+Computer Science. IEEE, 136–145.
+[3] Ran Canetti. 2004. Universally composable signature, certification, and authentication. In Proceedings. 17th IEEE Computer Security Foundations Workshop, 2004.
+IEEE, 219–233.
+[4] Yanjiao Chen, Yuyang Ran, Jingyue Zhou, Jian Zhang, and Xueluan Gong. 2021.
+MPCN-RP: A Routing Protocol for Blockchain-based Multi-Charge Payment
+Channel Networks. IEEE Transactions on Network and Service Management
+(2021).
+[5] Sanjoy Dasgupta, Christos H Papadimitriou, and Umesh Virkumar Vazirani. 2008.
+Algorithms. McGraw-Hill Higher Education New York.
+[6] Elias Rohrer and Julian Malliaris and Florian Tschorsch [n. d.]. Elias Rohrer and
+Julian Malliaris and Florian Tschorsch. https://git.tu-berlin.de/rohrer/dischargedpc-data/tree/master/snapshots
+[7] Qianyun Gong, Chengjin Zhou, Le Qi, Jianbin Li, Jianzhong Zhang, and Jingdong
+Xu. 2021. VEIN: High scalability routing algorithm for Blockchain-based payment
+channel networks. In 2021 IEEE 20th International Conference on Trust, Security
+and Privacy in Computing and Communications (TrustCom). IEEE, 43–50.
+[8] Hsiang-Jen Hong, Sang-Yoon Chang, and Xiaobo Zhou. 2023. Auto-tune: An efficient autonomous multi-path payment routing algorithm for Payment Channel
+Networks. Computer Networks 225 (2023), 109659.
+[9] Don Johnson, Alfred Menezes, and Scott Vanstone. 2001. The elliptic curve
+digital signature algorithm (ECDSA). International journal of information security
+1 (2001), 36–63.
+[10] Kartick Kolachala, Mohammed Ababneh, and Roopa Vishwanathan. 2023.
+RACED: Routing in Payment Channel Networks Using Distributed Hash Tables. arXiv preprint arXiv:2311.17668 (2023).
+[11] Zilin Liu, Anjia Yang, Jian Weng, Tao Li, Huang Zeng, and Xiaojian Liang. 2022.
+Gmhl: generalized multi-hop locks for privacy-preserving payment channel
+networks. Cryptology ePrint Archive (2022).
+[12] LND. 2023. LND soruce routing. https://lightning.engineering/posts/2018-05-23routing/.
+[13] Giulio Malavolta, Pedro Moreno-Sanchez, Aniket Kate, and Matteo Maffei. 2016.
+Silentwhispers: Enforcing security and privacy in decentralized credit networks.
+Cryptology ePrint Archive (2016).
+[14] Giulio Malavolta, Pedro Moreno-Sanchez, Clara Schneidewind, Aniket Kate, and
+Matteo Maffei. 2018. Anonymous multi-hop locks for blockchain scalability and
+interoperability. Cryptology ePrint Archive (2018).
+[15] Networkx library [n. d.]. Networkx library. https://networkx.org/
+[16] Onion routing [n. d.]. Onion routing. https://www.onion-router.net/
+[17] Gaurav Panwar, Satyajayant Misra, and Roopa Vishwanathan. 2019. Blanc:
+Blockchain-based anonymous and decentralized credit networks. In Proceedings
+of the Ninth ACM Conference on Data and Application Security and Privacy. 339–
+350.
+[18] Simon Parsons, Juan A Rodriguez-Aguilar, and Mark Klein. 2011. Auctions and
+bidding: A guide for computer scientists. ACM Computing Surveys (CSUR) 43, 2
+(2011), 1–59.
+[19] Joseph Poon and Thaddeus Dryja. 2016. The bitcoin lightning network: Scalable
+off-chain instant payments.
+[20] Pavel Prihodko, Slava Zhigulin, Mykola Sahno, Aleksei Ostrovskiy, and Olaoluwa
+Osuntokun. 2016. Flare: An approach to routing in lightning network. White
+Paper (2016), 144.
+[21] Raiden Network [n. d.]. Raiden Network. https://raiden.network/
+[22] Ripple [n. d.]. Ripple. https://ripple.com/
+[23] Ripple API [n. d.]. Ripple API. https://data.ripple.com/
+[24] Elias Rohrer, Julian Malliaris, and Florian Tschorsch. 2019. Discharged payment channels: Quantifying the lightning network’s resilience to topology-based
+attacks. In 2019 ieee european symposium on security and privacy workshops (euros&PW). IEEE, 347–356.
+[25] Stefanie Roos, Martin Beck, and Thorsten Strufe. 2016. Anonymous addresses
+for efficient and resilient routing in f2f overlays. In IEEE INFOCOM 2016-The 35th
+Annual IEEE International Conference on Computer Communications. IEEE, 1–9.
+[26] Stefanie Roos, Pedro Moreno-Sanchez, Aniket Kate, and Ian Goldberg. 2017.
+Settling payments fast and private: Efficient decentralized routing for path-based
+transactions. arXiv preprint arXiv:1709.05748 (2017).
+[27] István András Seres, Dániel A Nagy, Chris Buckland, and Péter Burcsi. 2019.
+Mixeth: efficient, trustless coin mixing service for ethereum. Cryptology ePrint
+Archive (2019).
+[28] Nafiseh Sharghivand, Farnaz Derakhshan, and Nazli Siasi. 2021. A comprehensive
+survey on auction mechanism design for cloud/edge resource management and
+pricing. IEEE Access 9 (2021), 126502–126529.
+
+A
+
+PROTOCOLS
+
+Protocol 5: Setup and Broadcast Protocol
+for 𝑖 = 1; 𝑖 ≤ 𝑛; 𝑖 + + do
+node 𝑖 does KeyGen(1𝜆 ) → sk𝑖 , vk𝑖
+3
+node 𝑖 does KeyGen(1𝜆 ) → SK𝑖 , VK𝑖
+4
+node 𝑖 does Signski (VKi ) → 𝜎VKi
+5 node 𝑖 calls RetrieveNeighbors(vk𝑖 ) → I𝑖
+6 node 𝑖 sends vk𝑖 to all the nodes in I𝑖
+7 for j=1;j≤ |I𝑖 |;j++ do
+8
+if( Verifyvk𝑖 ( VK𝑖 , 𝜎VK𝑖 ) → 0), 𝑗 return ⊥
+𝜆
+9 𝑛𝑠 picks 𝑥 ←$ {0, 1} , does 𝐻 (𝑥) → txid
+10 𝑛𝑠 sends the (txid, amt, vk𝑛𝑠 ) to the 𝑛𝑑 via a secure
+out-of-band communication channel 𝑛𝑠 constructs RREQ
+= (txid) and broadcasts it to all the nodes in I𝑛𝑠 . The nodes
+in I𝑛𝑠 forward this tuple to their neighbors until it reaches
+the intended 𝑛𝑑
+1
+
+2
+
+Setup and Broadcast, Protocol 5: At a high level, this protocol
+handles the generation of the signing and verification keypairs of a
+node, and the creation and transmission of a transaction identifier,
+txid. In this paper, we assume the existence of two pairs of keys for
+a node i, a long-term key pair, ski and vki , a temporary key pair,
+SKi , VKi . The temporary verification key of a node is signed by its
+long-term signing key (lines 1-4). This signature is verified by all the
+immediate neighbors of the node i in the network (lines 7, 8). This
+ties the node’s temporary identity to its long-term identity. Each
+node i uses its temporary identity to interact with non-neighboring
+nodes in the network. This protocol also handles the communication
+of the transaction details, the transaction id, txid that uniquely
+identifies each transaction, the amt that the 𝑛𝑠 intends to send,
+13
+
+1873
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+3) F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality: This functionality is depicted in the Figure 8, it performs two operations: Path Selection and HTLC Establishment. The path selection begins with 𝑛𝑑 sending the details
+needed for HTLC establishment and payment (the digest and the
+corresponding preimage) to the functionality. 𝑛𝑠 then sends in the
+list of all the paths K, along which all the splits of the amt will be
+routed. Once the appropriate checks are performed, these details
+are stored by the functionality. The final operation in this is the
+HTLC establishment, in which the functionality helps every pair
+of consecutive nodes along every path from 𝑛𝑠 to 𝑛𝑑 establish the
+HTLC and complete the payment.
+4) Fℎ𝑡𝑙𝑐 functionality: The steps of the Fℎ𝑡𝑙𝑐 functionality are straight
+forward. This functionality is depicted in Figure 7.
+5) F𝐵𝐶 functionality: This functionality handles the blockchain read
+and write operations. The steps are described in Figure 9.
+
+the long-term verification key of the 𝑛𝑠 , vk𝑛𝑠 to the 𝑛𝑑 through a
+secure out-of-band communication channel (line 9-10). Finally, this
+protocol handles the broadcasting of the RREQ tuple, containing
+the txid to all the nodes in the network.
+
+B
+
+SECURITY ANALYSIS
+
+1) F𝑖𝑛𝑖𝑡 functionality: This functionality is depicted in Figure 5. It
+handles the generation and verification of identities for all the nodes
+in the PCN. This functionality performs two operations Key Generation and Identity Verification. In the Key Generation phase, the
+F𝑖𝑛𝑖𝑡 functionality generates the long-term and temporary signing
+and verification key pairs using the F𝑠𝑖𝑔 functionality. The purpose
+of creating a temporary identity is to hide the real identity of a
+node from its non-neighboring nodes in the network. Once the
+identities are generated, F𝑖𝑛𝑖𝑡 also handles the verification of the
+node’s temporary identity by its neighbors.
+
+Proof. Initialization: The actions of the honest users, H, ⊂
+[1..𝑛], 𝑛 is the number of nodes in the network are simulated by
+the simulator S and the actions of dishonest users, D ⊂ [1..𝑛],
+are simulated by the adversary A. For each node 𝑖 ∈ H, S generates the input tuples (Key Gen, 𝑠𝑖𝑑𝑖 ) and sends them to the F𝑖𝑛𝑖𝑡
+functionality. It calls the F𝑠𝑖𝑔 functionality and forwards the tuple (Key Gen, 𝑠𝑖𝑑𝑖 ). For each node 𝑖 ∈ H, the F𝑖𝑛𝑖𝑡 sends a tuple
+(Long Term Verification Key, 𝑠𝑖𝑑𝑖 , vk𝑖 )
+and (Temporary Verification Key, 𝑠𝑖𝑑𝑖 , VK𝑖 ) to S. For each node 𝑖 ∈
+H, S, generates the input (Sign, 𝑠𝑖𝑑𝑖 , VK𝑖 ) and sends it to F𝑖𝑛𝑖𝑡 functionality. F𝑖𝑛𝑖𝑡 and forwards the tuple (Sign, 𝑠𝑖𝑑𝑖 , VK𝑖 ) sent by S.
+Upon receiving the tuple (Signature, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝜎𝑖 ), from F𝑠𝑖𝑔 , this
+tuple is forwarded to S by the F𝑖𝑛𝑖𝑡 functionality. The adversary
+A generates the tuples (Long Term Verification Key,
+𝑠𝑖𝑑 𝑗 , vk 𝑗 ) and (Temporary Verification Key, 𝑠𝑖𝑑 𝑗 , VK 𝑗 ), for those nodes
+𝑗 ∈ D that have a direct connection with the nodes ∈ H and gives
+them to S. The adversary A also generates the tuple (Verify, VK 𝑗 ,
+𝜎VK 𝑗 , vk 𝑗 ) for those nodes 𝑗 ∈ D that have a direct connection with
+the nodes ∈ H and sends it to S. S forwards this tuple to the F𝑖𝑛𝑖𝑡
+functionality. Upon receiving the tuple (Verify, 𝑠𝑖𝑑 𝑗 , VK 𝑗 , 𝑓 ) from
+the F𝑖𝑛𝑖𝑡 functionality, S forwards this tuple to A. If the value of
+𝑓 in the tuple is 𝜙 or 0, the F𝑖𝑛𝑖𝑡 functionality sends a ⊥ to S who
+forwards this to A.
+Auction : This handles the auctioning of the maxcap between the
+nodes along the path from the 𝑛𝑠 to 𝑛𝑑 and also the sending of
+the RREQ tuple from the 𝑛𝑠 to the 𝑛𝑑 . We shall describe the RREQ
+sending first. Here we will have 3 cases
+Case 0: 𝑛𝑠 and I𝑛𝑠 ∈ H: S constructs the tuple (RREQ, txid) and
+sends this tuple to the F𝐴𝑈 𝐶 functionality. It sends a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 message back to the S.
+Case 1: 𝑛𝑠 ∈ H and some I𝑛𝑠 ∈ D: S constructs the tuple (RREQ,
+txid) and sends it to the F𝐴𝑈 𝐶 functionality and also to A. It sends
+a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 message to the S.
+Case 2: 𝑛𝑠 ∈ D and some intermediate nodes in H: A constructs
+the tuple (RREQ, txid) and sends it to S. S forwards this tuple to
+the F𝐴𝑈 𝐶 functionality. The F𝐴𝑈 𝐶 functionality sends this tuple
+back to S, who forwards this tuple to A.
+Next, the 𝑛𝑑 sends the RREP tuple to all the nodes in P𝑛𝑑 . Here we
+have 4 cases:
+Case 0: 𝑛𝑑 and I𝑛𝑑 ∈ H: S constructs the tuple 𝑡 = (RREP, (txid,
+
+Figure 5: F𝑖𝑛𝑖𝑡 functionality
+Key Generation: Upon receiving the tuple (KeyGen,
+𝑠𝑖𝑑𝑖 ) from node 𝑖 or S, F𝑖𝑛𝑖𝑡 forwards it to F𝑠𝑖𝑔 . Upon
+receiving (Long Term Verification Key, 𝑠𝑖𝑑𝑖 , vk𝑖 ) and
+(Temporary Verification Key, 𝑠𝑖𝑑𝑖 , VK𝑖 ), F𝑖𝑛𝑖𝑡 stores the
+tuple (𝑠𝑖𝑑𝑖 , vk𝑖 , VK𝑖 ) in the table utable and sends
+the tuple (Long Term Verification Key, 𝑠𝑖𝑑𝑖 , vk𝑖 ) and
+(Temporary Verification Key, 𝑠𝑖𝑑𝑖 , VK𝑖 ) to the node and
+the simulator S. Upon receiving the tuple (Sign, 𝑠𝑖𝑑𝑖 , VK𝑖 ) from
+node 𝑖 or S, F𝑖𝑛𝑖𝑡 sends the tuple (Sign, 𝑠𝑖𝑑𝑖 , VK𝑖 ) to F𝑠𝑖𝑔 . If
+F𝑠𝑖𝑔 responds with (Signature, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝜎VK𝑖 ), F𝑖𝑛𝑖𝑡 updates the
+corresponding entry in utable to (𝑠𝑖𝑑𝑖 , ·, ·, 𝜎VK𝑖 ) and sends the
+tuple (Signature, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝜎VK𝑖 ) to the node and also to S. Else
+F𝑖𝑛𝑖𝑡 returns ⊥.
+Identity Verification: Upon receiving the tuple
+(Immediate Neighbors, I𝑖 ) from node 𝑖 or S, F𝑖𝑛𝑖𝑡 sends
+the tuple (Temporary Verification Key, VK𝑖 ) to all the nodes in I𝑖 .
+Upon receiving the tuple (Verify, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝜎VK𝑖 , vk𝑖 ) from nodes
+in I𝑖 or S, F𝑖𝑛𝑖𝑡 sends the tuple (Verify, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝜎VK𝑖 ,vk𝑠𝑖𝑑 )
+to F𝑠𝑖𝑔 . Upon receiving (Verify, 𝑠𝑖𝑑𝑖 , VK𝑖 , 𝑓 ) from F𝑠𝑖𝑔 , F𝑖𝑛𝑖𝑡
+updates the utable with (𝑠𝑖𝑑𝑖 , ·, · ,·, 𝑓 ) and sends the tuple (Verify,
+𝑠𝑖𝑑𝑖 , VK𝑖 , 𝑓 ) to the nodes in I𝑖 and this tuple is also sent to the S.
+
+2) F𝐴𝑈 𝐶 functionality: This functionality is depicted in the Figure 6. It performs two operations, Auction and Bidding. The auction operation handles the auctioning of the maximum capacities,
+maxcap available in the channels from the 𝑛𝑑 to the 𝑛𝑠 , and the
+corresponding bidding of the nodes for these capacities. The functionality initially broadcasts the RREQ tuple sent by 𝑛𝑠 to all its
+immediate neighbors until it reaches the 𝑛𝑑 . Once this is done, the
+functionality sends an AUC tuple constructed by each node taking
+part in the auction to all of the node’s immediate neighbors from
+whom the RREQ message was received. This terminates the auctioning operation. In the Bidding phase, every node that intends
+to take part in the auction will construct appropriate bidding tuples
+with the appropriate prices and sends them to the auctioneer.
+14
+
+1874
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Figure 6: F𝐴𝑈 𝐶 Ideal Functionality
+
+Figure 6: F𝐴𝑈 𝐶 Ideal Functionality Continued
+
+𝑛𝑠 , 𝑛𝑑 communication: Upon receiving the tuple (pay, txid,
+amt, vk𝑛𝑠 , 𝑠𝑖𝑑𝑛𝑑 , 𝑠𝑖𝑑𝑛𝑠 ) from 𝑛𝑠 , the F𝐴𝑈 𝐶 functionality send
+this tuple to the F𝑖𝑛𝑖𝑡 functionality. Upon receiving the
+message (RESP, Success) from the F𝑖𝑛𝑖𝑡 functionality, the
+F𝐴𝑈 𝐶 functionality forwards the tuple (pay, txid, amt, vk𝑛𝑠 ,
+𝑠𝑖𝑑𝑛𝑑 ) to the 𝑛𝑑 and stores the txid, amt in the txtable =
+(𝑠𝑖𝑑𝑛𝑠 , txid, amt, ⊥, ⊥, ⊥, ⊥, ⊥, ⊥). If the F𝑖𝑛𝑖𝑡 functionality
+returns a tuple (RESP, ⊥), the F𝐴𝑈 𝐶 functionality returns a ⊥
+and aborts.
+
+Auction: Upon receiving the tuple (AUC, txid, vk𝑔 , maxcap𝑔,𝑔+1 ,
+𝑔
+RP𝑔 , 𝜎AUC ) from each node 𝑔 ∈ P𝑛𝑑 , the F𝐴𝑈 𝐶 functionality
+checks if the tuple (𝑠𝑖𝑑𝑛𝑠 , txid, ·, ·, ·, ⊥, ⊥, ⊥, ⊥) exists in the txtable.
+F𝐴𝑈 𝐶 forwards this tuple to the F𝑖𝑛𝑖𝑡 functionality. For every node
+𝑔 in P𝑛𝑑 , if F𝑖𝑛𝑖𝑡 functionality returns a tuple (RESP, Success),
+𝑔
+F𝐴𝑈 𝐶 functionality sends the tuple (Verify, 𝑠𝑖𝑑𝑔 , AUC, 𝜎AUC , vk𝑔 )
+to F𝑠𝑖𝑔 functionality. Else, the F𝐴𝑈 𝐶 functionality returns a ⊥ and
+aborts. Upon receiving the tuple (Verify, 𝑠𝑖𝑑𝑔 , AUC, 𝑓 ), F𝐴𝑈 𝐶
+checks the value of 𝑓 . If 𝑓 = 0 or if 𝑓 = 𝜙, the functionality returns
+a ⊥ and aborts. If not, the F𝐴𝑈 𝐶 functionality sends the tuple
+𝑔
+(AUC, txid, vk𝑔 , maxcap𝑔,𝑔+1 , RP𝑔 , 𝜎AUC ) to the nodes 𝑔′ ∈ I𝑛𝑑 .
+
+RREQ sending: Upon receiving the tuple (RREQ, txid, 𝑠𝑖𝑑𝑛𝑠 ,
+I𝑛𝑠 ) from the 𝑛𝑠 , F𝐴𝑈 𝐶 functionality send this tuple to the
+F𝑖𝑛𝑖𝑡 functionality. Upon receiving the tuple (RESP, Success)
+from the F𝑖𝑛𝑖𝑡 functionality, F𝐴𝑈 𝐶 functionality checks if
+(𝑠𝑖𝑑𝑛𝑠 , txid, ·, ⊥, ⊥, ⊥, ⊥, ⊥, ⊥) exists in txtable. If yes, the
+F𝐴𝑈 𝐶 functionality forwards the tuple (RREQ, txid) to all the
+nodes in I𝑛𝑠 . Else, the functionality.
+
+Bidding: Upon receiving the tuple (BID, txid, maxcap𝑔,𝑔′ , BP𝑔′ ,
+𝑔′
+
+𝜎BID ) from each node 𝑔′ ∈ I𝑛𝑑 to whom the AUC tuple was sent,
+the F𝐴𝑈 𝐶 functionality checks if the tuple (𝑠𝑖𝑑𝑛𝑠 , txid, ·, ·, ·, ⊥, ⊥,
+⊥, ⊥) exists in the txtable. If not, the functionality returns a ⊥ and
+aborts. If yes, the F𝐴𝑈 𝐶 functionality sends the tuple (Verify, 𝑠𝑖𝑑𝑔′ ,
+
+RREP sending to P𝑛𝑑 : Upon receiving the tuple 𝑡 = (RREP,
+(txid, VK𝑛𝑑 , P, amt, 0, 𝜎RREP𝑛 ), P𝑛𝑑 ) from the 𝑛𝑑 , the F𝐴𝑈 𝐶
+𝑑
+functionality checks if the tuple (𝑠𝑖𝑑𝑛𝑠 , txid, amt, ⊥, ⊥, ⊥, ⊥,
+⊥, ⊥) exists in txtable. If yes, F𝐴𝑈 𝐶 functionality forwards
+this tuple to the F𝑖𝑛𝑖𝑡 functionality. Upon receiving the tuple
+(RESP, Success) from the F𝑖𝑛𝑖𝑡 functionality, the F𝐴𝑈 𝐶
+functionality forwards the tuple (Verify, 𝑠𝑖𝑑𝑛𝑑 , 𝑡, 𝜎RREP , VK𝑛𝑑
+) to the F𝑠𝑖𝑔 functionality. Upon receiving the tuple (Verify,
+𝑠𝑖𝑑𝑛𝑑 , 𝑡, 𝑓 ) from the F𝑠𝑖𝑔 functionality, the F𝐴𝑈 𝐶 checks the
+value of 𝑓 . If 𝑓 = 0 or 𝑓 = 𝜙, the functionality returns a ⊥ and
+aborts. If not, the F𝐴𝑈 𝐶 functionality sends the tuple
+𝑡 = (txid, VK𝑛𝑑 , P, amt, 0, 𝜎RREP ) to each node 𝑔 ∈ P𝑛𝑑 and
+stores the P, P𝑛𝑑 in the txtable = (𝑠𝑖𝑑𝑛𝑠 , ·, ·, P, P𝑛𝑑 , ⊥, ⊥, ⊥,
+⊥).
+
+𝑔′
+
+(BID, 𝜎BID , vk𝑔′ ) to the F𝑠𝑖𝑔 functionality. Upon receiving the tuple
+Verify, 𝑠𝑖𝑑𝑔′ , BID, 𝑓 ). If the value of 𝑓 is either 0 or 𝜙, the F𝐴𝑈 𝐶
+𝑔
+functionality constructs a tuple (BC Write, vk𝑔 , 𝑡, 𝜎BID ), where 𝑡 =
+BID tuple, and sends this tuple to F𝐵𝐶 functionality. F𝐴𝑈 𝐶
+functionality also returns a ⊥ and aborts. If not, the functionality
+𝑔′
+forwards the tuple BID, txid, maxcap𝑔,𝑔′ , BP𝑔′ , 𝜎BID ) to 𝑔. s
+Bidder authentication: Upon receiving the tuple (Valid Bidders,
+B, txid, 𝑠𝑖𝑑𝑔 ) from 𝑔, the F𝐴𝑈 𝐶 functionality updates the txtable to
+store (·, txid, ·, ·, ·, B, ⊥, ⊥, ⊥).
+Final RREP sending: Upon receiving the tuple (RREP, txid, P,
+currmax𝑔′ ,𝑛𝑑 , cost𝑔′ ,𝑛𝑑 , 𝜎RREP , vk𝑔 ) from 𝑔 for every node 𝑔′ ,
+F𝐴𝑈 𝐶 retrieves the txid and B from txtable(·, txid, ·, ·, ·, B, ⊥, ⊥,
+⊥) and checks if each node 𝑔′ ∈ B. If not, F𝐴𝑈 𝐶 returns a ⊥ and
+aborts. If not, F𝐴𝑈 𝐶 checks if txid ∈ txtable (·, txid, ·, ·, ·, ·, ⊥, ⊥, ⊥).
+If yes, F𝐴𝑈 𝐶 functionality sends the tuple (Verify, 𝑠𝑖𝑑𝑔 , RREP,
+𝜎RREP , vk𝑔′ ) to F𝑠𝑖𝑔 functionality. Upon receiving the tuple (Verify,
+𝑠𝑖𝑑𝑔 , RREP, 𝑓 ) from F𝑠𝑖𝑔 functionality, F𝐴𝑈 𝐶 checks the value of 𝑓 .
+If 𝑓 = 0 or if 𝑓 = 𝜙, the functionality returns a ⊥ and aborts.
+
+𝑛𝑑
+VK𝑛𝑑 , P𝑛𝑑 , amt, 0, 𝜎RREP
+)) and sends this tuple to F𝐴𝑈 𝐶 functionality, who performs the required checks and sends this tuple back
+to S.
+Case 1: 𝑛𝑑 ∈ H and some I𝑛𝑑 ∈ D: S constructs the tuple 𝑡 = (RREP,
+𝑛𝑑
+(txid, VK𝑛𝑑 , P𝑛𝑑 , amt, 0, 𝜎RREP
+)) and sends this tuple to F𝐴𝑈 𝐶 functionality and A. F𝐴𝑈 𝐶 functionality performs the required checks
+and sends this tuple back to S.
+Case 2: 𝑛𝑑 ∈ D and some I𝑛𝑑 ∈ H: A constructs the tuple 𝑡 = (RREP,
+𝑛𝑑
+(txid, VK𝑛𝑑 , P𝑛𝑑 , amt, 0, 𝜎RREP
+)) and sends it to S, who sends this
+to F𝐴𝑈 𝐶 functionality. If all the checks performed by F𝐴𝑈 𝐶 functionality pass, it returns the same back to S who sends this to A.
+If not, the functionality returns a ⊥ to S. Case 3: 𝑛𝑑 and P𝑛𝑑 ∈ D:
+This case is simulated by A.
+Now auction commences between every pair of nodes 𝑔 and 𝑔′ .
+Here we will have 4 cases.
+Case 0: 𝑔 ∈ H and 𝑔′ ∈ H: S constructs an input tuple (AUC, txid,
+𝑔
+vk𝑔 , maxcap𝑔,𝑔+1 , RP𝑔 , 𝜎AUC ) and sends it to the F𝐴𝑈 𝐶 functionality. Upon receiving this tuple from S, the F𝐴𝑈 𝐶 functionality
+stores the required information and sends this tuple back to S who
+forwards this tuple to the node 𝑔′ .
+Case 1: 𝑔 ∈ H and 𝑔′ ∈ D: S constructs an input tuple (AUC, txid,
+
+𝑔
+
+vk𝑔 , maxcap𝑔,𝑔+1 , RP𝑔 , 𝜎AUC ) and sends it to the F𝐴𝑈 𝐶 functionality. The F𝐴𝑈 𝐶 functionality stores the required information sends
+this tuple back to S who forwards this tuple to A that simulates
+the node 𝑔′ .
+Case 2: 𝑔 ∈ D and 𝑔′ ∈ H: Initially S sends the (txid) to A. A
+will construct the auction tuple (AUC, txid, vk𝑔 , maxcap𝑔,𝑔+1 , RP𝑔 ,
+𝑔
+𝜎AUC ) and will send it to S, who forwards this tuple to the F𝐴𝑈 𝐶
+functionality. If the value of 𝑓 ̸= 1, the F𝐴𝑈 𝐶 functionality will
+return a ⊥, abort and will send this message to the S who in turn
+forwards this to A.
+Case 3: Both 𝑔 and 𝑔′ ∈ D: This case is locally simulated by A.
+Bidding: The bidding is carried out by the node 𝑔′ after it receives
+the auction tuple during auction from node 𝑔. Here we have 4 cases
+Case 0: 𝑔′ ∈ H and 𝑔 ∈ H: S constructs a tuple (BID, txid, maxcap𝑔,𝑔′ ,
+15
+
+1875
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+Mohammed Ababneh, Kartick Kolachala, and Roopa Vishwanathan
+
+𝑔′
+
+BP𝑔′ , 𝜎𝐵𝐼 𝐷 ) for the node 𝑔′ and sends this tuple to the F𝐴𝑈 𝐶 functionality. The F𝐴𝑈 𝐶 functionality records the required information
+and sends this tuple back to S.
+Case 1: 𝑔′ ∈ D and 𝑔 ∈ H: S sends the (txid, maxcap𝑔,𝑔′ ) to A. A
+
+Figure 8: F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality
+Path Selection: Upon receiving the tuple (HTLC Details, 𝑌 , 𝑋 ,
+txid, 𝑠𝑖𝑑𝑛𝑑 ) from the 𝑛𝑑 , the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality checks if the
+tuple (𝑠𝑖𝑑𝑛𝑑 , txid, ·, ·, ·, ·, ·, ·, ·, ·, ·) exists in the txtable. F𝑃𝑎𝑦𝑚𝑒𝑛𝑡
+also checks if the tuple ( 𝑠𝑖𝑑𝑛𝑑 , ·, ·, ·, ·) exists in the utable. If these
+checks do not pass, the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 returns a ⊥ and aborts. If all
+these checks pass, the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 updates the txtable to store (𝑠𝑖𝑑𝑛𝑠 ,
+·, ·, ·, ·, ·, ·, ·, ·, ·, 𝑌 , 𝑋 ) and sends the tuple (HTLC Details, 𝑌 , 𝑋 ,
+txid, 𝑠𝑖𝑑𝑛𝑑 ) to 𝑠𝑖𝑑𝑛𝑠 . Upon receiving the tuple (All Paths, K, 𝑠𝑖𝑑𝑛𝑠 )
+from 𝑛𝑠 , the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality checks if the tuple (𝑠𝑖𝑑𝑛𝑠 , txid,
+·, ·, ·, ·, ·, ·, ·, ·, 𝑌 , 𝑋 ) exists in the txtable. If this check does not pass,
+the functionality returns a ⊥ and aborts. If not, the functionality
+updates the txtable to store (𝑠𝑖𝑑𝑛𝑠 , txid, ·, ·, ·, ·, ·, ·, ·, ·, ·, ·, K).
+
+Figure 7: Fℎ𝑡𝑙𝑐 ideal functionality
+• Initialization: Upon receiving the tuple (Payment,
+vk𝐵𝑜𝑏 , vk𝐴𝑙𝑖𝑐𝑒 , 𝑠𝑖𝑑𝐴𝑙𝑖𝑐𝑒 ) from F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , Fℎ𝑡𝑙𝑐 checks
+if vk𝐴𝑙𝑖𝑐𝑒 , vk𝐵𝑜𝑏 ∈ utable = (𝑠𝑖𝑑𝐴𝑙𝑖𝑐𝑒 , vk𝐴𝑙𝑖𝑐𝑒 ·, ·, ·) and
+utable = (𝑠𝑖𝑑𝐵𝑜𝑏 , 𝑣𝑘𝐵𝑜𝑏 , ·, ·, ·) respectively. If yes, Fℎ𝑡𝑙𝑐
+sends a message (Init OK) to Bob. Else it returns a
+⊥. Upon receiving the tuple (Payment, vk𝐵𝑜𝑏 , vk𝐴𝑙𝑖𝑐𝑒 ,
+𝑠𝑖𝑑𝐴𝑙𝑖𝑐𝑒 ) from F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , Fℎ𝑡𝑙𝑐 checks if vk𝐴𝑙𝑖𝑐𝑒 , vk𝐵𝑜𝑏
+∈ utable = (𝑠𝑖𝑑𝐴𝑙𝑖𝑐𝑒 , vk𝐴𝑙𝑖𝑐𝑒 ·, ·, ·) and utable = (𝑠𝑖𝑑𝐵𝑜𝑏 ,
+𝑣𝑘𝐵𝑜𝑏 , ·, ·, ·) respectively. If yes, Fℎ𝑡𝑙𝑐 sends a message
+(Init OK) to Alice. Else it returns a ⊥.
+• HTLC fulfillment: Upon receiving the tuple
+(HTLC tuple, vk𝑖 , vk𝑖+1 , txid, amt, 𝑌 , 𝑋 ) for every pair
+of consecutive nodes along the path of the txid from
+Bob to Alice, from F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, Fℎ𝑡𝑙𝑐 checks
+if 𝐻 (𝑋 ) = 𝑌 , if yes, Fℎ𝑡𝑙𝑐 sends a message (Success) to
+F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 . Else it returns a ⊥.
+
+HTLC Establishment: Upon receiving the tuple (HTLC Tuple,
+𝑣𝑘 i , vki+1 , txid, amt, 𝑌 , 𝑋 ) from i, for each pair of consecutive
+nodes i, i + 1 along the path from the 𝑛𝑠 to the 𝑛𝑑 , the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡
+functionality checks if the tuple (𝑠𝑖𝑑𝑛𝑠 , txid, amt, ·, ·, ·, ·, ·, ·, ·, 𝑌 , 𝑋 ,
+·). F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 then retrieves the list K from the tuple (𝑠𝑖𝑑𝑛𝑠 , ·, ·, ·, ·,
+·, ·, ·, ·, ·, ·, ·, K) exists in the txtable and retrieves all the P from the
+K and checks if the nodes i and i + 1 are consecutive nodes in any
+of these P lists. If any of these checks fail, the functionality returns
+a ⊥ and aborts. If all the checks pass, the tuple (HTLC Payment,
+𝑣𝑘 i , vki+1 , txid, amt, 𝑌 , 𝑋 ) is sent to the Fℎ𝑡𝑙𝑐 functionality. Upon
+receiving the messages, either (Success) or ⊥, they will be
+forwarded to the node i + 1.
+
+𝑔′
+
+generates the bidding tuple (BID, txid, maxcap𝑔,𝑔′ , BP𝑔′ , 𝜎𝐵𝐼 𝐷 ) and
+sends it to the S. S forwards this tuple to the F𝐴𝑈 𝐶 functionality.
+If any of the entries in the tuple are incorrect, the F𝐴𝑈 𝐶 returns a
+⊥ and aborts and sends the ⊥ to S who in turn forwards this tuple
+to A.
+Case 2: 𝑔′ ∈ H and 𝑔 ∈ D: S constructs a tuple (BID, txid, maxcap𝑔,𝑔′ ,
+
+𝑔 ∈ D: This case is simulated by A.
+Payment: This handles the actual payment between the 𝑛𝑠 and 𝑛𝑑
+in Auroch. We have the following cases to consider.
+Case 0: 𝑛𝑠 , 𝑛𝑑 and all intermediate nodes are ∈ H: S constructs
+the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 ) and sends this tuple to
+the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. The functionality returns this tuple
+back to S. S constructs the tuple (All Paths, K, 𝑠𝑖𝑑𝑛𝑠 ) and send to
+the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. For every pair of consecutive nodes
+i and i + 1 along each path from 𝑛𝑠 to 𝑛𝑑 , S constructs the tuple (HTLC Tuple, vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and sends it to the
+F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. The F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality sends this tuple to Fℎ𝑡𝑙𝑐 functionality. The Fℎ𝑡𝑙𝑐 functionality sends a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠
+message to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, which in turn forwards this
+message to S. zCase 1: 𝑛𝑠 , 𝑛𝑑 ∈ H and some intermediate nodes
+∈ D: S constructs the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 ) and
+sends this tuple to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. The functionality
+returns this tuple back to S. S constructs the tuple (All Paths, K,
+𝑠𝑖𝑑𝑛𝑠 ) and send to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. For every pair of
+consecutive nodes, i and i + 1 along each path fzrom the 𝑛𝑠 to the 𝑛𝑑 ,
+such that node i is ℎ𝑜𝑛𝑒𝑠𝑡 and node i + 1 is 𝑑𝑖𝑠ℎ𝑜𝑛𝑒𝑠𝑡, S (simulating
+the honest node i) sends the tuple (vki , 𝑌 , 𝑋 ) to A. A simulates
+the HTLC payment locally and constructs the tuple (HTLC Tuple,
+vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) to S. S forwards this tuple to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡
+functionality. The F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality sends this tuple to Fℎ𝑡𝑙𝑐
+functionality. The Fℎ𝑡𝑙𝑐 functionality returns either a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or a
+⊥ to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , who sends this to S. S sends this message to
+A. Similarly, for every pair of consecutive nodes along the path
+from 𝑛𝑠 to 𝑛𝑑 , where i ∈ D and i + 1 ∈ H, A sens the (vki ) to S. S
+
+𝑔′
+
+BP𝑔′ , 𝜎𝐵𝐼 𝐷 ) for the node 𝑔′ and sends this tuple to the F𝐴𝑈 𝐶 functionality. F𝐴𝑈 𝐶 functionality records the required information and
+sends this tuple back to S, who in turn forwards this tuple to A.
+Valid bidders: This handles the sending of the valid bidder’s tuple
+by the node 𝑔 to the F𝐴𝑈 𝐶 functionality. Here we have 2 cases.
+Case 0: 𝑔 ∈ H: S constructs the tuple (Valid Bidders, B, txid, 𝑠𝑖𝑑𝑔 )
+and sends it to the F𝐴𝑈 𝐶 functionality. F𝐴𝑈 𝐶 functionality stores
+the required information in the txtable and returns a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 message to S.
+Case 1: 𝑔 ∈ D: S will send the tuple (txid) to A. A creates the
+tuple (Valid Bidders, B, txid, 𝑠𝑖𝑑𝑔 ) and sends it to S, who sends
+it to F𝐴𝑈 𝐶 . If any of the entries in the tuple are incorrect, F𝐴𝑈 𝐶
+returns a ⊥.
+RREP send: Once the BID tuples have been received by the node
+𝑔′ , every node 𝑔 sends an RREP tuple to the node 𝑔′ . Here we have
+2 cases
+Case 0: 𝑔 ∈ H: S constructs the tuple (RREP, txid, P, currmax𝑔′ ,𝑛𝑑 ,
+cost𝑔′ ,𝑛𝑑 , 𝜎RREP , vk𝑔 ) for each node 𝑔′ and sends this tuple to the
+F𝐴𝑈 𝐶 functionality. The F𝐴𝑈 𝐶 functionality sends a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 message to S.
+Case 1: 𝑔 ∈ D: A constructs the tuple (RREP, txid, P, currmax𝑔′ ,𝑛𝑑 ,
+cost𝑔′ ,𝑛𝑑 , 𝜎RREP , vk𝑔 ) for every node 𝑔′ and sends this tuple to S
+who forwards this tuple to the F𝐴𝑈 𝐶 functionality. If any of the
+entries in the tuple are incorrect, the F𝐴𝑈 𝐶 returns a ⊥ and sends
+this message to S who forwards this to A.
+16
+
+1876
+
+Auroch: Auction-Based Multipath Routing for Payment Channel Networks
+
+ASIA CCS ’24, July 1–5, 2024, Singapore, Singapore
+
+𝑠𝑖𝑑𝑛𝑑 ) and sends this tuple to S. S sends this tuple to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡
+functionality. S (simulating the honest 𝑛𝑠 ) constructs the tuple
+(All Paths, K, 𝑠𝑖𝑑𝑛𝑠 ) and sends this tuple to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. For every pair of consecutive nodes, i and i + 1 along each
+path from 𝑛𝑠 to 𝑛𝑑 , such that i ∈ H and i + 1 ∈ D, S (simulating node
+i), sends the tuple (vk𝑖 , 𝑌 , 𝑋 ), to A. A then constructs the tuple
+(HTLC Tuple, vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and sens this tuple to S.
+S will send this tuple to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who in turn
+forwards this tuple to Fℎ𝑡𝑙𝑐 functionality. The Fℎ𝑡𝑙𝑐 functionality
+can either return a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or ⊥. This sent to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who sends this to S, who in turn sends this to A.
+Case 5: 𝑛𝑠 ∈ D, some intermediate nodes in H, 𝑛𝑑 ∈ D: A, simulating the 𝑛𝑑 , constructs the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 )
+and sends it to S. S sends this tuple to the F𝐴𝑈 𝐶 functionality.
+A simulating the 𝑛𝑠 , constructs the tuple (All Paths, K, 𝑠𝑖𝑑𝑛𝑠 ) and
+sens it to S and S forwards this tuple to F𝐴𝑈 𝐶 functionality. If
+the entries in this tuple are incorrect, the functionality returns a
+⊥ and aborts and the same message is sent to A. For every pair of
+consecutive nodes, i and i + 1 along each path from 𝑛𝑠 to 𝑛𝑑 , such
+that i ∈ H and i+1 ∈ D, S (simulating node i), sends the tuple (vk𝑖 , 𝑌 ,
+𝑋 ), to A. A then constructs the tuple (HTLC Tuple, vki , vki+1 , txid,
+amt, 𝑌 , 𝑋 ) and sens this tuple to S. S will send this tuple to the
+F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who in turn forwards this tuple to Fℎ𝑡𝑙𝑐
+functionality. The Fℎ𝑡𝑙𝑐 functionality can either return a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or
+⊥. This sent to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who sends this to S, who
+in turn sends this to A.
+Case 6: 𝑛𝑠 and some intermediate nodes ∈ D and 𝑛𝑑 ∈ H: S constructs the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 ) and sends it to
+the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. A constructs the tuple (All Paths, K)
+and sends it to the S, who forwards to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality.
+If the entries in the tuple are incorrect, the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality
+returns a ⊥. Else, For every pair of consecutive nodes, i and i+1 from
+𝑛𝑠 to 𝑛𝑑 , S sends the tuple (vk𝑖 , 𝑌 , 𝑋 ), to A. A then constructs the
+tuple (HTLC Tuple, vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and sens this tuple
+to S, who in turn forwards this tuple to Fℎ𝑡𝑙𝑐 functionality. The
+Fℎ𝑡𝑙𝑐 functionality can either return a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or ⊥.
+□
+
+constructs the tuple (HTLC Tuple, vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and
+sends this to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who sends this tuple to Fℎ𝑡𝑙𝑐
+functionality. The Fℎ𝑡𝑙𝑐 functionality either returns a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or ⊥
+and this sent to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who sends this to S, who
+in turn sends this to A.
+
+Figure 9: F𝐵𝐶 functionality
+Blockchain read: Upon receiving the tuple (BC Read, vki ) from
+a node i in the network, the F𝐵𝐶 functionality retrieves the
+successfully mined blocks from the BCTable = (B1 , . . . , B 𝑗 ) and
+sends this data to the node vki .
+𝑡 ,
+Blockchain write: Upon receiving the tuple (BC Write, 𝜎vk
+i
+(𝐻 txid , ·, 𝑡, ·, ·, ·, ·, ·, ·, ·, 1, 1, ·, ·, ·, ·, ·, ·, ·)) from a node i in the
+network, the F𝐵𝐶 functionality constructs the tuple (Verify, 𝑠𝑖𝑑 i ,
+𝑡 , vk ) to the F
+𝑡, 𝜎vk
+𝑠𝑖𝑔 functionality. Upon the receiving the
+i
+i
+tuple (Verify, 𝑠𝑖𝑑 i , 𝑡, 𝑓 ) from F𝑠𝑖𝑔 functionality, If the value of 𝑓
+is 𝜙 or 0, the F𝐵𝐶 functionality returns a ⊥ and aborts. If not,
+F𝐵𝐶 retrieves the fees from this transaction (𝐻 i , ·, 𝑡, 𝑓 𝑒𝑒, ·, ·, ·, ·,
+·, ·, 1, 1, ·, ·, ·, ·, ·, ·, ·) and checks if this 𝑓 𝑒𝑒 > the base fees, 𝑓 𝑒𝑒 ′ .
+If yes, the F𝐵𝐶 functionality adds this transaction to the list of
+pending transactions T and adds this T to the block being
+currently mined B𝑐𝑢𝑟𝑟 = (·, ·, ·, T). F𝐵𝐶 internally runs a
+Proof-of-Work challenge and mines a block B𝑛𝑒𝑤 and this block
+is propagated to all the nodes in the network.
+
+Case 2: 𝑛𝑠 ∈ H and some intermediate nodes are ∈ H and the 𝑛𝑑
+∈ D: A constructs the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 ) and
+sends this tuple to S, who forwards this to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 . S constructs
+the tuple (All Paths, K, 𝑠𝑖𝑑𝑛𝑠 ) and sends this tuple to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡
+functionality. For every pair of consecutive nodes, i and i + 1 along
+each path from the 𝑛𝑠 to the 𝑛𝑑 , such that node i is ℎ𝑜𝑛𝑒𝑠𝑡 and node
+i + 1 is 𝑑𝑖𝑠ℎ𝑜𝑛𝑒𝑠𝑡, S sends the tuple (vki , 𝑌 , 𝑋 ) to A. A simulates
+the HTLC payment locally and constructs the tuple (HTLC Tuple,
+vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) to S, who sends it to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , who
+then forwards this to Fℎ𝑡𝑙𝑐 . The Fℎ𝑡𝑙𝑐 functionality returns either
+a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or a ⊥ to the F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , who sends this to S. Similarly,
+for every pair of consecutive nodes along the path from 𝑛𝑠 to 𝑛𝑑 ,
+where i ∈ D and i + 1 ∈ H, A sens the (vki ) to S. S constructs the
+tuple (HTLC Tuple, vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and sends this to
+F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality, who sends this tuple to Fℎ𝑡𝑙𝑐 functionality.
+The Fℎ𝑡𝑙𝑐 functionality either returns a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or ⊥.
+Case 3: 𝑛𝑠 ∈ H, 𝑛𝑑 and some intermediate nodes are ∈ D: 𝑛𝑠 constructs the tuple (All Paths, K, 𝑠𝑖𝑑𝑛𝑠 ) and sends it to A and the
+F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 will send the tuple (HTLC Details, 𝑌 , 𝑋 , txid, 𝑠𝑖𝑑𝑛𝑑 ) and
+will send this tuple to S, who sends this tuple to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 functionality. For every pair of consecutive nodes, i and i + 1 from 𝑛𝑠 to
+𝑛𝑑 , such that i ∈ H and i + 1 ∈ D, S (simulating node i), sends the
+tuple (vk𝑖 , 𝑌 , 𝑋 ), to A. A then constructs the tuple (HTLC Tuple,
+vki , vki+1 , txid, amt, 𝑌 , 𝑋 ) and sends this tuple to S, who forwards
+this to F𝑃𝑎𝑦𝑚𝑒𝑛𝑡 , who sends it to Fℎ𝑡𝑙𝑐 . The Fℎ𝑡𝑙𝑐 functionality can
+either return a 𝑠𝑢𝑐𝑐𝑒𝑠𝑠 or ⊥.
+Case 4: 𝑛𝑠 ∈ H, 𝑛𝑑 and some intermediate nodes are ∈ D: A
+(simulating the 𝑛𝑑 ), constructs the tuple (HTLC Details, 𝑌 , 𝑋 , txid,
+17
+
+1877
+
+

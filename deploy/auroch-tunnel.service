@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudflare Tunnel: auroch.dhruvmulani.com -> 127.0.0.1:6001
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+After=network-online.target auroch-app.service
+Wants=network-online.target auroch-app.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/boss/Documents/Collage/BTP/auroch-engine-v2
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file /home/boss/.cloudflared/auroch.token
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target
